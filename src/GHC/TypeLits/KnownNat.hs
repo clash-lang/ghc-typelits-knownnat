@@ -33,14 +33,14 @@ class KnownNatAdd (a :: Nat) (b :: Nat) where
   natSingAdd :: SNatKn (a + b)
 
 instance (KnownNat a, KnownNat b) => KnownNatAdd a b where
-  natSingAdd = SNatKn (natVal (Proxy :: Proxy a) + natVal (Proxy :: Proxy b))
+  natSingAdd = SNatKn (natVal (Proxy @ a) + natVal (Proxy @ b))
   {-# INLINE natSingAdd #-}
 
 class KnownNatMul (a :: Nat) (b :: Nat) where
   natSingMul :: SNatKn (a * b)
 
 instance (KnownNat a, KnownNat b) => KnownNatMul a b where
-  natSingMul = SNatKn (natVal (Proxy :: Proxy a) * natVal (Proxy :: Proxy b))
+  natSingMul = SNatKn (natVal (Proxy @ a) * natVal (Proxy @ b))
   {-# INLINE natSingMul #-}
 
 class KnownNatExp (a :: Nat) (b :: Nat) where
