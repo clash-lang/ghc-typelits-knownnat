@@ -59,7 +59,7 @@ import Id         (idType)
 import InstEnv    (instanceDFunId,lookupUniqueInstEnv)
 import Module     (mkModuleName)
 import OccName    (mkTcOcc)
-import Outputable (Outputable (..), (<+>), integer, text, vcat)
+import Outputable (Outputable (..), (<+>), integer, text, vcat, parens)
 import Panic      (panicDoc, pgmErrorDoc)
 import Plugins    (Plugin (..), defaultPlugin)
 import PrelNames  (knownNatClassName)
@@ -104,9 +104,9 @@ data KnOp
 instance Outputable KnOp where
   ppr (I i)     = integer i
   ppr (V v)     = ppr v
-  ppr (Add x y) = text "(" <+> ppr x <+> text "+" <+> ppr y <+> text ")"
-  ppr (Mul x y) = text "(" <+> ppr x <+> text "*" <+> ppr y <+> text ")"
-  ppr (Exp x y) = text "(" <+> ppr x <+> text "^" <+> ppr y <+> text ")"
+  ppr (Add x y) = parens $ ppr x <+> text "+" <+> ppr y
+  ppr (Mul x y) = parens $ ppr x <+> text "*" <+> ppr y
+  ppr (Exp x y) = parens $ ppr x <+> text "^" <+> ppr y
 
 {-|
 A type checker plugin for GHC that can derive \"complex\" @KnownNat@
