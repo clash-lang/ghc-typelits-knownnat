@@ -18,7 +18,7 @@ type checker plugin working.
 
 {-# LANGUAGE Safe #-}
 
-{-# OPTIONS_GHC -Wno-unused-top-binds #-}
+{-# OPTIONS_GHC -Wno-unused-top-binds -fexpose-all-unfoldings #-}
 {-# OPTIONS_HADDOCK show-extensions #-}
 
 module GHC.TypeLits.KnownNat () where
@@ -34,12 +34,14 @@ class KnownNatAdd (a :: Nat) (b :: Nat) where
 
 instance (KnownNat a, KnownNat b) => KnownNatAdd a b where
   natSingAdd = SNatKn (natVal (Proxy :: Proxy a) + natVal (Proxy :: Proxy b))
+  {-# INLINE natSingAdd #-}
 
 class KnownNatMul (a :: Nat) (b :: Nat) where
   natSingMul :: SNatKn (a * b)
 
 instance (KnownNat a, KnownNat b) => KnownNatMul a b where
   natSingMul = SNatKn (natVal (Proxy :: Proxy a) * natVal (Proxy :: Proxy b))
+  {-# INLINE natSingMul #-}
 
 class KnownNatExp (a :: Nat) (b :: Nat) where
   natSingExp :: SNatKn (a ^ b)
@@ -51,3 +53,4 @@ instance (KnownNat a, KnownNat b) => KnownNatExp a b where
                          2 -> shiftL 1 (fromInteger y)
                          _ -> x ^ y
                in  SNatKn z
+  {-# INLINE natSingExp #-}
