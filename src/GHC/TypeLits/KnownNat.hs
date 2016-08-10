@@ -23,9 +23,9 @@ type checker plugin working.
 
 module GHC.TypeLits.KnownNat () where
 
-import Data.Bits
-import Data.Proxy
-import GHC.TypeLits
+import Data.Bits    (shiftL)
+import Data.Proxy   (Proxy (..))
+import GHC.TypeLits (KnownNat, Nat, type (+), type (*), type (^), natVal)
 
 newtype SNatKn (n :: Nat) = SNatKn Integer
 
