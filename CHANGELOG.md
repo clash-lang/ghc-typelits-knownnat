@@ -1,4 +1,4 @@
 # Changelog for the [`ghc-typelits-knownnat`](http://hackage.haskell.org/package/ghc-typelits-knownnat) package
 
-## 0.1
+## 0.1 *August 10th 2016*
 * Initial release
