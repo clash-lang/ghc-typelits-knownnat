@@ -229,9 +229,9 @@ lookupKnownNatDefs = do
 reifyOp :: KnOp -> Type
 reifyOp (I i)     = mkNumLitTy i
 reifyOp (V v)     = mkTyVarTy v
-reifyOp (Add x y) = mkTyConApp typeNatAddTyCon [reifyOp x, reifyOp y]
-reifyOp (Mul x y) = mkTyConApp typeNatMulTyCon [reifyOp x, reifyOp y]
-reifyOp (Exp x y) = mkTyConApp typeNatExpTyCon [reifyOp x, reifyOp y]
+reifyOp (Add x y) = mkTyConApp typeNatAddTyCon $ reifyOp <$> [x, y]
+reifyOp (Mul x y) = mkTyConApp typeNatMulTyCon $ reifyOp <$> [x, y]
+reifyOp (Exp x y) = mkTyConApp typeNatExpTyCon $ reifyOp <$> [x, y]
 
 -- | Try to create evidence for a wanted constraint
 constraintToEvTerm :: KnownNatDefs -> [(TyVar,KnConstraint)] -> KnConstraint
