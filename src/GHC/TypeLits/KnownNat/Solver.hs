@@ -60,7 +60,7 @@ import InstEnv    (instanceDFunId,lookupUniqueInstEnv)
 import Module     (mkModuleName)
 import OccName    (mkTcOcc)
 import Outputable (Outputable (..), (<+>), integer, text, vcat)
-import Panic      (panic, pgmErrorDoc)
+import Panic      (panicDoc, pgmErrorDoc)
 import Plugins    (Plugin (..), defaultPlugin)
 import PrelNames  (knownNatClassName)
 import TcEvidence (EvTerm (..), EvLit (EvNum), mkEvCast, mkTcSymCo, mkTcTransCo)
@@ -239,16 +239,17 @@ constraintToEvTerm :: KnownNatDefs -> [(TyVar,KnConstraint)] -> KnConstraint
 constraintToEvTerm defs kn_map (ct,cls,op) = (,ct) <$> go op
   where
     go (I i) = makeLitDict cls (mkNumLitTy i) i
-    go (V v) | Just (ct',_,_) <- lookup v kn_map =
-      let ct_ev = ctEvidence ct'
-          evT   = ctev_evar ct_ev
-      in  Just (EvId evT)
+    go (V v) = case lookup v kn_map of
+      Just (ct',_,_) -> let ct_ev = ctEvidence ct'
+                            evT   = ctev_evar ct_ev
+                        in  Just (EvId evT)
+      Nothing -> Nothing
     go e = do
       let (x,y,df) = case e of
             Add x' y' -> (x',y',knAddDFunId defs)
             Mul x' y' -> (x',y',knMulDFunId defs)
             Exp x' y' -> (x',y',knExpDFunId defs)
-            _ -> panic "GHC.TypeLits.KnownNat.Solver: not an op"
+            _ -> panicDoc "GHC.TypeLits.KnownNat.Solver: not an op" (ppr e)
       x' <- go x
       y' <- go y
       makeOpDict df cls (reifyOp x) (reifyOp y) (reifyOp e) x' y'
