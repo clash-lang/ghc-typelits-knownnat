@@ -31,7 +31,7 @@ tests = testGroup "ghc-typelits-natnormalise"
     [ testCase "KnownNat 4 + KnownNat 6 ~ 10" $
       show (test1 (Proxy @ 4)) @?=
       "10"
-    , testCase "KnownNat 4 + KnownNat 3 ~ 12" $
+    , testCase "KnownNat 4 * KnownNat 3 ~ 12" $
       show (test2 (Proxy @ 4)) @?=
       "12"
     , testCase "KnownNat 2 + KnownNat 7 ~ 9" $
