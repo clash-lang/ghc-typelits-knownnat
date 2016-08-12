@@ -24,11 +24,12 @@ f _ = natVal (Proxy :: Proxy n) + natVal (Proxy :: Proxy (n+2))
 The plugin can only derive `KnownNat` constraints consisting of:
 
 * Type-level naturals
-* Type variables
-* Applications of the arithmetic expression: `{+,*,^}`.
-
-i.e. it _cannot_ derive a `KnownNat (n-1)` constraint from a `KnownNat n`
-constraint
+* Type variables, when there is a matching given `KnownNat` constraint
+* Applications of the arithmetic expression: `{+,*,^}`; i.e. it _cannot_ derive
+  a `KnownNat (n-1)` constraint given a `KnownNat n` constraint
+* All other types, when there is a matching given `KnownNat` constraint; i.e.
+  It _can_ derive a `KnownNat (Max x y + 1)` constraint given a
+  `KnownNat (Max x y)` constraint.
 
 To use the plugin, add the
 

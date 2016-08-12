@@ -23,11 +23,12 @@ f _ = natVal (Proxy :: Proxy n) + natVal (Proxy :: Proxy (n+2))
 The plugin can only derive @KnownNat@ constraints consisting of:
 
 * Type-level naturals
-* Type variables
-* Applications of the arithmetic expression: @{+,*,^}@
-
-i.e. it /cannot/ derive a @KnownNat (n-1)@ constraint from a @KnownNat n@
-constraint
+* Type variables, when there is a matching given @KnownNat@ constraint
+* Applications of the arithmetic expression: @{+,*,^}@; i.e. it /cannot/ derive
+  a @KnownNat (n-1)@ constraint given a @KnownNat n@ constraint
+* All other types, when there is a matching given @KnownNat@ constraint; i.e.
+  It /can/ derive a @KnownNat (Max x y + 1)@ constraint given a
+  @KnownNat (Max x y)@ constraint.
 
 To use the plugin, add the
 
@@ -39,7 +40,8 @@ Pragma to the header of your file.
 
 -}
 
-{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE TupleSections              #-}
 
 {-# LANGUAGE Trustworthy   #-}
 
@@ -48,6 +50,7 @@ Pragma to the header of your file.
 module GHC.TypeLits.KnownNat.Solver (plugin) where
 
 -- external
+import Data.Coerce         (coerce)
 import Data.Maybe          (catMaybes,mapMaybe)
 import GHC.TcPluginM.Extra (lookupModule, lookupName, tracePlugin)
 
@@ -68,11 +71,11 @@ import TcPluginM  (TcPluginM, tcLookupClass, getInstEnvs, zonkCt)
 import TcRnTypes  (Ct, CtEvidence (..), TcPlugin(..), TcPluginResult (..),
                    ctEvidence, ctEvPred, isWanted)
 import TcTypeNats (typeNatAddTyCon, typeNatMulTyCon, typeNatExpTyCon)
-import Type       (PredTree (ClassPred), TyVar, classifyPredType, dropForAlls,
-                   funResultTy, tyConAppTyCon_maybe, mkNumLitTy, mkTyVarTy,
+import Type       (PredTree (ClassPred), classifyPredType, dropForAlls, eqType,
+                   funResultTy, tyConAppTyCon_maybe, mkNumLitTy,
                    mkTyConApp)
 import TyCoRep    (Type (..), TyLit (..))
-import Var        (DFunId)
+import Var        (DFunId, EvVar)
 
 -- | Classes and instances from "GHC.TypeLits.KnownNat"
 data KnownNatDefs = KnownNatDefs
@@ -96,14 +99,20 @@ type KnConstraint = (Ct    -- The constraint
 -- | Reified argument of a KnownNat
 data KnOp
   = I Integer
-  | V TyVar
+  | C CType
   | Add KnOp KnOp
   | Mul KnOp KnOp
   | Exp KnOp KnOp
 
+newtype CType = CType Type
+  deriving Outputable
+
+instance Eq CType where
+  (==) = coerce eqType
+
 instance Outputable KnOp where
   ppr (I i)     = integer i
-  ppr (V v)     = ppr v
+  ppr (C v)     = ppr v
   ppr (Add x y) = parens $ ppr x <+> text "+" <+> ppr y
   ppr (Mul x y) = parens $ ppr x <+> text "*" <+> ppr y
   ppr (Exp x y) = parens $ ppr x <+> text "^" <+> ppr y
@@ -129,11 +138,12 @@ f _ = natVal (Proxy :: Proxy n) + natVal (Proxy :: Proxy (n+2))
 The plugin can only derive @KnownNat@ constraints consisting of:
 
 * Type-level naturals
-* Type variables
-* Applications of the arithmetic expression: @{+,*,^}@.
-
-i.e. it /cannot/ derive a @KnownNat (n-1)@ constraint from a @KnownNat n@
-constraint
+* Type variables, when there is a matching given @KnownNat@ constraint
+* Applications of the arithmetic expression: @{+,*,^}@; i.e. it /cannot/ derive
+  a @KnownNat (n-1)@ constraint given a @KnownNat n@ constraint
+* All other types, when there is a matching given @KnownNat@ constraint; i.e.
+  It /can/ derive a @KnownNat (Max x y + 1)@ constraint given a
+  @KnownNat (Max x y)@ constraint.
 
 To use the plugin, add the
 
@@ -176,7 +186,7 @@ toKnConstraint :: Ct -> Maybe KnConstraint
 toKnConstraint ct = case classifyPredType $ ctEvPred $ ctEvidence ct of
   ClassPred cls [ty]
     |  className cls == knownNatClassName
-    -> ((ct,cls,) <$> toKnOp ty)
+    -> Just (ct,cls,toKnOp ty)
   _ -> Nothing
 
 {- |
@@ -186,18 +196,19 @@ The plugin can only derive @KnownNat@ constraints consisting of:
 * Type variables
 * Applications of the arithmetic expression: @{+,*,^}@.
 -}
-toKnOp :: Type -> Maybe KnOp
-toKnOp (LitTy (NumTyLit i)) = pure (I i)
-toKnOp (TyVarTy v)          = pure (V v)
+toKnOp :: Type -> KnOp
+toKnOp (LitTy (NumTyLit i)) = I i
 toKnOp (TyConApp tc [x,y])
-  | tc == typeNatAddTyCon = Add <$> toKnOp x <*> toKnOp y
-  | tc == typeNatMulTyCon = Mul <$> toKnOp x <*> toKnOp y
-  | tc == typeNatExpTyCon = Exp <$> toKnOp x <*> toKnOp y
-toKnOp _ = Nothing
+  | tc == typeNatAddTyCon = Add (toKnOp x) (toKnOp y)
+  | tc == typeNatMulTyCon = Mul (toKnOp x) (toKnOp y)
+  | tc == typeNatExpTyCon = Exp (toKnOp x) (toKnOp y)
+toKnOp ty = (C (CType ty))
 
 -- | Create a look-up entry for @n@ given a [G]iven @KnownNat n@ constraint.
-toKnEntry :: KnConstraint -> Maybe (TyVar,KnConstraint)
-toKnEntry kn@(_,_,V v) = Just (v,kn)
+toKnEntry :: KnConstraint -> Maybe (CType,EvVar)
+toKnEntry (ct,_,C ty) = let ct_ev = ctEvidence ct
+                            evT   = ctev_evar ct_ev
+                        in  Just (ty,evT)
 toKnEntry _ = Nothing
 
 -- | Find the \"magic\" classes and instances in "GHC.TypeLits.KnownNat"
@@ -227,23 +238,19 @@ lookupKnownNatDefs = do
 
 -- | Convert a reified argument of a KnownNat constraint back to a type
 reifyOp :: KnOp -> Type
-reifyOp (I i)     = mkNumLitTy i
-reifyOp (V v)     = mkTyVarTy v
-reifyOp (Add x y) = mkTyConApp typeNatAddTyCon $ reifyOp <$> [x, y]
-reifyOp (Mul x y) = mkTyConApp typeNatMulTyCon $ reifyOp <$> [x, y]
-reifyOp (Exp x y) = mkTyConApp typeNatExpTyCon $ reifyOp <$> [x, y]
+reifyOp (I i)          = mkNumLitTy i
+reifyOp (C (CType ty)) = ty
+reifyOp (Add x y)      = mkTyConApp typeNatAddTyCon $ reifyOp <$> [x, y]
+reifyOp (Mul x y)      = mkTyConApp typeNatMulTyCon $ reifyOp <$> [x, y]
+reifyOp (Exp x y)      = mkTyConApp typeNatExpTyCon $ reifyOp <$> [x, y]
 
 -- | Try to create evidence for a wanted constraint
-constraintToEvTerm :: KnownNatDefs -> [(TyVar,KnConstraint)] -> KnConstraint
+constraintToEvTerm :: KnownNatDefs -> [(CType,EvVar)] -> KnConstraint
                    -> Maybe (EvTerm,Ct)
 constraintToEvTerm defs kn_map (ct,cls,op) = (,ct) <$> go op
   where
-    go (I i) = makeLitDict cls (mkNumLitTy i) i
-    go (V v) = case lookup v kn_map of
-      Just (ct',_,_) -> let ct_ev = ctEvidence ct'
-                            evT   = ctev_evar ct_ev
-                        in  Just (EvId evT)
-      Nothing -> Nothing
+    go (I i)  = makeLitDict cls (mkNumLitTy i) i
+    go (C ty) = EvId <$> lookup ty kn_map
     go e = do
       let (x,y,df) = case e of
             Add x' y' -> (x',y',knAddDFunId defs)

@@ -1,5 +1,5 @@
 name:                ghc-typelits-knownnat
-version:             0.1.1
+version:             0.1.2
 synopsis:            Derive KnownNat constraints from other KnownNat constraints
 description:
   A type checker plugin for GHC that can derive \"complex\" @KnownNat@
@@ -23,12 +23,14 @@ description:
   .
   * Type-level naturals
   .
-  * Type variables
+  * Type variables, when there is a matching given @KnownNat@ constraint
   .
-  * Applications of the arithmetic expression: +,*,^
+  * Applications of the arithmetic expression: +,*,^; i.e. it /cannot/ derive a
+    @KnownNat (n-1)@ constraint given a @KnownNat n@ constraint
   .
-  i.e. it /cannot/ derive a @KnownNat (n-1)@ constraint from a @KnownNat n@
-  constraint
+  * All other types, when there is a matching given @KnownNat@ constraint; i.e.
+    It /can/ derive a @KnownNat (Max x y + 1)@ constraint given a
+    @KnownNat (Max x y)@ constraint.
   .
   To use the plugin, add the
   .
