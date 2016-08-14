@@ -50,9 +50,11 @@ Pragma to the header of your file.
 module GHC.TypeLits.KnownNat.Solver (plugin) where
 
 -- external
-import Data.Coerce         (coerce)
-import Data.Maybe          (catMaybes,mapMaybe)
-import GHC.TcPluginM.Extra (lookupModule, lookupName, tracePlugin)
+import Control.Arrow             (first)
+import Control.Monad.Trans.Maybe (MaybeT (..))
+import Data.Coerce               (coerce)
+import Data.Maybe                (catMaybes,mapMaybe)
+import GHC.TcPluginM.Extra       (lookupModule, lookupName, tracePlugin)
 
 -- GHC API
 import Class      (Class, classMethods, className, classTyCon)
@@ -62,60 +64,44 @@ import Id         (idType)
 import InstEnv    (instanceDFunId,lookupUniqueInstEnv)
 import Module     (mkModuleName)
 import OccName    (mkTcOcc)
-import Outputable (Outputable (..), (<+>), integer, text, vcat, parens)
-import Panic      (panicDoc, pgmErrorDoc)
+import Outputable (Outputable (..), (<+>), text)
 import Plugins    (Plugin (..), defaultPlugin)
 import PrelNames  (knownNatClassName)
 import TcEvidence (EvTerm (..), EvLit (EvNum), mkEvCast, mkTcSymCo, mkTcTransCo)
 import TcPluginM  (TcPluginM, tcLookupClass, getInstEnvs, zonkCt)
 import TcRnTypes  (Ct, CtEvidence (..), TcPlugin(..), TcPluginResult (..),
                    ctEvidence, ctEvPred, isWanted)
-import TcTypeNats (typeNatAddTyCon, typeNatMulTyCon, typeNatExpTyCon)
 import Type       (PredTree (ClassPred), classifyPredType, dropForAlls, eqType,
-                   funResultTy, tyConAppTyCon_maybe, mkNumLitTy,
-                   mkTyConApp)
+                   funResultTy, tyConAppTyCon_maybe, mkNumLitTy)
 import TyCoRep    (Type (..), TyLit (..))
 import Var        (DFunId, EvVar)
 
+import TyCon      (tyConName)
+import Type       (mkStrLitTy)
+import Module     (moduleName, moduleNameString)
+import Name       (nameModule_maybe, nameOccName)
+import OccName    (occNameString)
+
 -- | Classes and instances from "GHC.TypeLits.KnownNat"
 data KnownNatDefs = KnownNatDefs
-  { knAddDFunId :: (Class,DFunId) -- ^ KnownNatAdd class and its only instance
-  , knMulDFunId :: (Class,DFunId) -- ^ KnownNatMul class and its only instance
-  , knExpDFunId :: (Class,DFunId) -- ^ KnownNatPow class and its only instance
+  { kn2 :: Class -- ^ KnownNat2 class
   }
 
 instance Outputable KnownNatDefs where
-  ppr d = text "{" <+> ppr (knAddDFunId d) <+>
-          text "," <+> ppr (knMulDFunId d) <+>
-          text "," <+> ppr (knExpDFunId d) <+>
+  ppr d = text "{" <+> ppr (kn2 d) <+>
           text "}"
 
 -- | KnownNat constraints
 type KnConstraint = (Ct    -- The constraint
                     ,Class -- KnownNat class
-                    ,KnOp  -- The argument to KnownNat
+                    ,Type  -- The argument to KnownNat
                     )
-
--- | Reified argument of a KnownNat
-data KnOp
-  = I Integer
-  | C CType
-  | Add KnOp KnOp
-  | Mul KnOp KnOp
-  | Exp KnOp KnOp
 
 newtype CType = CType Type
   deriving Outputable
 
 instance Eq CType where
   (==) = coerce eqType
-
-instance Outputable KnOp where
-  ppr (I i)     = integer i
-  ppr (C v)     = ppr v
-  ppr (Add x y) = parens $ ppr x <+> text "+" <+> ppr y
-  ppr (Mul x y) = parens $ ppr x <+> text "*" <+> ppr y
-  ppr (Exp x y) = parens $ ppr x <+> text "^" <+> ppr y
 
 {-|
 A type checker plugin for GHC that can derive \"complex\" @KnownNat@
@@ -175,91 +161,62 @@ solveKnownNat defs  givens  _deriveds wanteds = do
     _  -> do
       kn_givens <- catMaybes <$> mapM (fmap toKnConstraint . zonkCt) givens
       -- Make a lookup table of the [G]iven KnownNat constraints
-      let kn_map = mapMaybe toKnEntry kn_givens
+      let kn_map = map toKnEntry kn_givens
       -- Try to solve the wanted KnownNat constraints given the [G]iven
       -- KnownNat constraints
-      let solved = mapMaybe (constraintToEvTerm defs kn_map) kn_wanteds
-      return (TcPluginOk solved [])
+      (solved,new) <- (unzip . catMaybes) <$> (mapM (constraintToEvTerm defs kn_map) kn_wanteds)
+      return (TcPluginOk solved (concat new))
 
 -- | Get the KnownNat constraints
 toKnConstraint :: Ct -> Maybe KnConstraint
 toKnConstraint ct = case classifyPredType $ ctEvPred $ ctEvidence ct of
   ClassPred cls [ty]
     |  className cls == knownNatClassName
-    -> Just (ct,cls,toKnOp ty)
+    -> Just (ct,cls,ty)
   _ -> Nothing
 
-{- |
-The plugin can only derive @KnownNat@ constraints consisting of:
-
-* Type-level naturals
-* Type variables
-* Applications of the arithmetic expression: @{+,*,^}@.
--}
-toKnOp :: Type -> KnOp
-toKnOp (LitTy (NumTyLit i)) = I i
-toKnOp (TyConApp tc [x,y])
-  | tc == typeNatAddTyCon = Add (toKnOp x) (toKnOp y)
-  | tc == typeNatMulTyCon = Mul (toKnOp x) (toKnOp y)
-  | tc == typeNatExpTyCon = Exp (toKnOp x) (toKnOp y)
-toKnOp ty = (C (CType ty))
-
 -- | Create a look-up entry for @n@ given a [G]iven @KnownNat n@ constraint.
-toKnEntry :: KnConstraint -> Maybe (CType,EvVar)
-toKnEntry (ct,_,C ty) = let ct_ev = ctEvidence ct
-                            evT   = ctev_evar ct_ev
-                        in  Just (ty,evT)
-toKnEntry _ = Nothing
+toKnEntry :: KnConstraint -> (CType,EvVar)
+toKnEntry (ct,_,ty) = let ct_ev = ctEvidence ct
+                          evT   = ctev_evar ct_ev
+                      in  (CType ty,evT)
 
 -- | Find the \"magic\" classes and instances in "GHC.TypeLits.KnownNat"
 lookupKnownNatDefs :: TcPluginM KnownNatDefs
 lookupKnownNatDefs = do
     md     <- lookupModule myModule myPackage
-    addDF  <- look md "KnownNatAdd"
-    mulDF  <- look md "KnownNatMul"
-    expDF  <- look md "KnownNatExp"
-    return $ KnownNatDefs addDF mulDF expDF
+    kn2C   <- look md "KnownNat2"
+    return $ KnownNatDefs kn2C
   where
     look md s = do
       nm   <- lookupName md (mkTcOcc s)
-      cls  <- tcLookupClass nm
-      ienv <- getInstEnvs
-      case lookupUniqueInstEnv ienv cls [mkNumLitTy 0, mkNumLitTy 0] of
-        Right (inst, _) -> return (cls,instanceDFunId inst)
-        Left  err       ->
-          pgmErrorDoc "Initialising GHC.TypeLits.KnownNat.Solver failed"
-                      (vcat [text "Cannot find: " <+> text s
-                            ,text "Reason: "
-                            ,err
-                            ])
+      tcLookupClass nm
 
     myModule  = mkModuleName "GHC.TypeLits.KnownNat"
     myPackage = fsLit "ghc-typelits-knownnat"
 
--- | Convert a reified argument of a KnownNat constraint back to a type
-reifyOp :: KnOp -> Type
-reifyOp (I i)          = mkNumLitTy i
-reifyOp (C (CType ty)) = ty
-reifyOp (Add x y)      = mkTyConApp typeNatAddTyCon $ reifyOp <$> [x, y]
-reifyOp (Mul x y)      = mkTyConApp typeNatMulTyCon $ reifyOp <$> [x, y]
-reifyOp (Exp x y)      = mkTyConApp typeNatExpTyCon $ reifyOp <$> [x, y]
-
 -- | Try to create evidence for a wanted constraint
 constraintToEvTerm :: KnownNatDefs -> [(CType,EvVar)] -> KnConstraint
-                   -> Maybe (EvTerm,Ct)
-constraintToEvTerm defs kn_map (ct,cls,op) = (,ct) <$> go op
+                   -> TcPluginM (Maybe ((EvTerm,Ct),[Ct]))
+constraintToEvTerm defs kn_map (ct,cls,op) = (fmap (first (,ct))) <$> go op
   where
-    go (I i)  = makeLitDict cls (mkNumLitTy i) i
-    go (C ty) = EvId <$> lookup ty kn_map
-    go e = do
-      let (x,y,df) = case e of
-            Add x' y' -> (x',y',knAddDFunId defs)
-            Mul x' y' -> (x',y',knMulDFunId defs)
-            Exp x' y' -> (x',y',knExpDFunId defs)
-            _ -> panicDoc "GHC.TypeLits.KnownNat.Solver: not an op" (ppr e)
-      x' <- go x
-      y' <- go y
-      makeOpDict df cls (reifyOp x) (reifyOp y) (reifyOp e) x' y'
+    go :: Type -> TcPluginM (Maybe (EvTerm,[Ct]))
+    go ty@(LitTy (NumTyLit i)) = return ((,[]) <$> makeLitDict cls ty i)
+    go ty@(TyConApp tc [x,y])
+      | let tcNm = tyConName tc
+      , Just m <- nameModule_maybe tcNm
+      = do let mS  = moduleNameString (moduleName m)
+               tcS = occNameString (nameOccName tcNm)
+               fn  = mkStrLitTy (fsLit (mS ++ "." ++ tcS))
+           ienv <- getInstEnvs
+           case lookupUniqueInstEnv ienv (kn2 defs) [fn,mkNumLitTy 0,mkNumLitTy 0] of
+             Right (inst, _) -> runMaybeT $ do
+               (xEv,newX) <- MaybeT (go x)
+               (yEv,newY) <- MaybeT (go y)
+               let df = (kn2 defs,instanceDFunId inst)
+               (MaybeT . return) ((,newX ++ newY) <$> makeOpDict df cls fn x y ty xEv yEv)
+             _ -> return ((,[]) <$> (EvId <$> lookup (CType ty) kn_map))
+    go ty = return ((,[]) <$> (EvId <$> lookup (CType ty) kn_map))
 
 {-
 Given:
@@ -282,13 +239,14 @@ representing multiplication and exponentiation.
 -}
 makeOpDict :: (Class,DFunId) -- ^ "magic" class function and dictionary function id
            -> Class          -- ^ KnownNat class
+           -> Type           -- ^ Symbol representing the function
            -> Type           -- ^ Type of the first argument
            -> Type           -- ^ Type of the second argument
            -> Type           -- ^ Type of the result
            -> EvTerm         -- ^ KnownNat dictionary for the first argument
            -> EvTerm         -- ^ KnownNat dictionary for the second argument
            -> Maybe EvTerm
-makeOpDict (opCls,dfid) knCls x y z xEv yEv
+makeOpDict (opCls,dfid) knCls f x y z xEv yEv
   | Just (_, kn_co_dict) <- tcInstNewTyCon_maybe (classTyCon knCls) [z]
     -- KnownNat n ~ SNat n
   , [ kn_meth ] <- classMethods knCls
@@ -298,7 +256,7 @@ makeOpDict (opCls,dfid) knCls x y z xEv yEv
                       $ idType kn_meth   -- forall n. KnownNat n => SNat n
   , Just (_, kn_co_rep) <- tcInstNewTyCon_maybe kn_tcRep [z]
     -- SNat n ~ Integer
-  , Just (_, op_co_dict) <- tcInstNewTyCon_maybe (classTyCon opCls) [x,y]
+  , Just (_, op_co_dict) <- tcInstNewTyCon_maybe (classTyCon opCls) [f,x,y]
     -- KnownNatAdd a b ~ SNatKn (a+b)
   , [ op_meth ] <- classMethods opCls
   , Just op_tcRep <- tyConAppTyCon_maybe -- SNatKn
