@@ -68,6 +68,9 @@ test7 _ _ = natVal (Proxy :: Proxy (Max n m + 1))
 test8 :: forall n m . (KnownNat (Min n m)) => Proxy n -> Proxy m -> Integer
 test8 _ _ = natVal (Proxy :: Proxy (Min n m + 1))
 
+test9 :: forall n m . (KnownNat m, KnownNat n, n <= m) => Proxy m -> Proxy n -> Integer
+test9 _ _ = natVal (Proxy :: Proxy (m-n))
+
 test11 :: forall m . (KnownNat m) => Proxy m -> Integer
 test11 _ = natVal (Proxy @ (m*m))
 
@@ -101,6 +104,9 @@ tests = testGroup "ghc-typelits-natnormalise"
     , testCase "KnownNat (Min 7 5 + 1) ~ 6" $
       show (test8 (Proxy @ 7) (Proxy @ 5)) @?=
       "6"
+    , testCase "KnownNat (7 - 5) ~ 2" $
+      show (test9 (Proxy @ 7) (Proxy @ 5)) @?=
+      "2"
     ],
     testGroup "Implications"
     [ testCase "KnownNat m => KnownNat (m*m); @ 5" $

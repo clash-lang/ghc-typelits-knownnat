@@ -28,9 +28,9 @@ module GHC.TypeLits.KnownNat where
 
 import Data.Bits              (shiftL)
 import Data.Proxy             (Proxy (..))
-import GHC.TypeLits           (KnownNat, Nat, Symbol, natVal)
+import GHC.TypeLits           (KnownNat, Nat, Symbol, type (<=), natVal)
 import Data.Singletons        (type (~>), type (@@))
-import Data.Promotion.Prelude (type (:+$), type (:*$), type (:^$))
+import Data.Promotion.Prelude (type (:+$), type (:*$), type (:^$), type (:-$))
 
 newtype SNatKn (n :: Nat) = SNatKn Integer
 
@@ -64,7 +64,7 @@ instance (KnownNat a, KnownNat b) => KnownNat2 "GHC.TypeLits.^" a b where
              in  SNatKn z
   {-# INLINE natSing2 #-}
 
--- instance (KnownNat a, KnownNat b, b <= a) => KnownNat2 "GHC.TypeLits.-" a b where
---   type KnownNatF2 "GHC.TypeLits.-" = (:-$)
---   natSing2 = SNatKn (natVal (Proxy @a) - natVal (Proxy @b))
---   {-# INLINE natSing2 #-}
+instance (KnownNat a, KnownNat b, b <= a) => KnownNat2 "GHC.TypeLits.-" a b where
+  type KnownNatF2 "GHC.TypeLits.-" = (:-$)
+  natSing2 = SNatKn (natVal (Proxy @a) - natVal (Proxy @b))
+  {-# INLINE natSing2 #-}
