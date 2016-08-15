@@ -18,8 +18,8 @@ type family Max (a :: Nat) (b :: Nat) :: Nat where
   Max 0 b = b -- See [Note: single equation TFs are treated like synonyms]
   Max a b = If (a <=? b) b a
 
-data MaxSym1 (n :: Nat) :: Nat ~> Nat
-data MaxSym2 :: Nat ~> (Nat ~> Nat)
+data MaxSym1 :: Nat -> Nat ~> Nat
+data MaxSym2 :: Nat ~> Nat ~> Nat
 
 type instance Apply MaxSym2 a     = (MaxSym1 a)
 type instance Apply (MaxSym1 a) b = Max a b

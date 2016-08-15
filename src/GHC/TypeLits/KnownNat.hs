@@ -35,7 +35,7 @@ import Data.Promotion.Prelude (type (:+$), type (:*$), type (:^$))
 newtype SNatKn (n :: Nat) = SNatKn Integer
 
 class KnownNat2 (f :: Symbol) (a :: Nat) (b :: Nat) where
-  type KnownNatF2 f :: Nat ~> (Nat ~> Nat)
+  type KnownNatF2 f :: Nat ~> Nat ~> Nat
   natSing2 :: SNatKn (KnownNatF2 f @@ a @@ b)
 
 instance (KnownNat a, KnownNat b) => KnownNat2 "GHC.TypeLits.+" a b where
