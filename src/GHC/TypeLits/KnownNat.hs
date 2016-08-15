@@ -34,9 +34,15 @@ import Data.Promotion.Prelude (type (:+$), type (:*$), type (:^$))
 
 newtype SNatKn (n :: Nat) = SNatKn Integer
 
+-- | Class for arithmetic functions with /two/ arguments.
 class KnownNat2 (f :: Symbol) (a :: Nat) (b :: Nat) where
   type KnownNatF2 f :: Nat ~> Nat ~> Nat
   natSing2 :: SNatKn (KnownNatF2 f @@ a @@ b)
+
+-- | Class for arithmetic functions with /three/ arguments.
+class KnownNat3 (f :: Symbol) (a :: Nat) (b :: Nat) (c :: Nat) where
+  type KnownNatF3 f :: Nat ~> Nat ~> Nat ~> Nat
+  natSing3 :: SNatKn (KnownNatF3 f @@ a @@ b @@ c)
 
 instance (KnownNat a, KnownNat b) => KnownNat2 "GHC.TypeLits.+" a b where
   type KnownNatF2 "GHC.TypeLits.+" = (:+$)
