@@ -51,11 +51,12 @@ Pragma to the header of your file.
 module GHC.TypeLits.KnownNat.Solver (plugin) where
 
 -- external
-import Control.Arrow             (first)
-import Data.Coerce               (coerce)
-import Data.Maybe                (catMaybes,mapMaybe)
-import GHC.TcPluginM.Extra       (lookupModule, lookupName, newWanted,
-                                  tracePlugin)
+import Control.Arrow                (first)
+import Data.Coerce                  (coerce)
+import Data.Maybe                   (catMaybes,mapMaybe)
+import GHC.TcPluginM.Extra          (lookupModule, lookupName, newWanted,
+                                     tracePlugin)
+import GHC.TypeLits.Normalise.Unify (normaliseNat,reifySOP)
 
 -- GHC API
 import Class      (Class, classMethods, className, classTyCon)
@@ -196,10 +197,10 @@ constraintToEvTerm :: KnownNatDefs     -- ^ The "magic" KnownNatN classes
                    -> [(CType,EvTerm)] -- All the [G]iven constraints
                    -> KnConstraint
                    -> TcPluginM (Maybe ((EvTerm,Ct),[Ct]))
-constraintToEvTerm defs givens (ct,cls,op) = (fmap (first (,ct))) <$> go op
+constraintToEvTerm defs givens (ct,cls,op) = (fmap (first (,ct))) <$> go (normalise op)
   where
     go :: Type -> TcPluginM (Maybe (EvTerm,[Ct]))
-    go ty@(LitTy (NumTyLit i)) = return ((,[]) <$> makeLitDict cls ty i)
+    go (LitTy (NumTyLit i)) = return ((,[]) <$> makeLitDict cls op i)
     go ty@(TyConApp tc args)
       | let tcNm = tyConName tc
       , Just m <- nameModule_maybe tcNm
@@ -218,7 +219,7 @@ constraintToEvTerm defs givens (ct,cls,op) = (fmap (first (,ct))) <$> go op
                            . (`piResultTys` args)
                            $ idType df_id
                (evs,new) <- unzip <$> mapM go_arg df_args
-               return ((,concat new) <$> makeOpDict df cls args' ty evs)
+               return ((,concat new) <$> makeOpDict df cls args' op evs)
              _ -> return ((,[]) <$> go_other ty)
     go ty = return ((,[]) <$> go_other ty)
 
@@ -234,7 +235,13 @@ constraintToEvTerm defs givens (ct,cls,op) = (fmap (first (,ct))) <$> go op
     go_other ty =
       let knClsTc = classTyCon cls
           kn      = mkTyConApp knClsTc [ty]
-      in  lookup (CType kn) givens
+          cast    = if CType ty == CType op
+                       then Just
+                       else makeKnCoercion cls ty op
+      in  cast =<< lookup (CType kn) givens
+
+    normalise :: Type -> Type
+    normalise = reifySOP . normaliseNat
 
 {- |
 Given:
@@ -288,6 +295,41 @@ makeOpDict (opCls,dfid) knCls tyArgs z evArgs
   = Just ev_tm
   | otherwise
   = Nothing
+
+{-
+Given:
+* A KnownNat dictionary evidence over a type x
+* a desired type z
+makeKnCoercion assembles a coercion from a KnownNat x
+dictionary to a KnownNat z dictionary and applies it
+to the passed-in evidence.
+The coercion happens in the following steps:
+1. KnownNat x -> SNat x
+2. SNat x     -> Integer
+3. Integer    -> SNat z
+4. SNat z     -> KnownNat z
+-}
+makeKnCoercion :: Class          -- ^ KnownNat class
+               -> Type           -- ^ Type of the argument
+               -> Type           -- ^ Type of the result
+               -> EvTerm         -- ^ KnownNat dictionary for the argument
+               -> Maybe EvTerm
+makeKnCoercion knCls x z xEv
+  | Just (_, kn_co_dict_z) <- tcInstNewTyCon_maybe (classTyCon knCls) [z]
+    -- KnownNat z ~ SNat z
+  , [ kn_meth ] <- classMethods knCls
+  , Just kn_tcRep <- tyConAppTyCon_maybe -- SNat
+                      $ funResultTy      -- SNat n
+                      $ dropForAlls      -- KnownNat n => SNat n
+                      $ idType kn_meth   -- forall n. KnownNat n => SNat n
+  , Just (_, kn_co_rep_z) <- tcInstNewTyCon_maybe kn_tcRep [z]
+    -- SNat z ~ Integer
+  , Just (_, kn_co_rep_x) <- tcInstNewTyCon_maybe kn_tcRep [x]
+    -- Integer ~ SNat x
+  , Just (_, kn_co_dict_x) <- tcInstNewTyCon_maybe (classTyCon knCls) [x]
+    -- SNat x ~ KnownNat x
+  = Just . mkEvCast xEv $ (kn_co_dict_x `mkTcTransCo` kn_co_rep_x) `mkTcTransCo` mkTcSymCo (kn_co_dict_z `mkTcTransCo` kn_co_rep_z)
+  | otherwise = Nothing
 
 -- | THIS CODE IS COPIED FROM:
 -- https://github.com/ghc/ghc/blob/8035d1a5dc7290e8d3d61446ee4861e0b460214e/compiler/typecheck/TcInteract.hs#L1973

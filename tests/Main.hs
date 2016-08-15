@@ -1,6 +1,7 @@
-{-# LANGUAGE DataKinds, GADTs, ScopedTypeVariables, TypeOperators,
+{-# LANGUAGE DataKinds, GADTs, KindSignatures, ScopedTypeVariables, TypeOperators,
              TypeApplications, FlexibleContexts #-}
 
+{-# OPTIONS_GHC -fplugin GHC.TypeLits.Normalise       #-}
 {-# OPTIONS_GHC -fplugin GHC.TypeLits.KnownNat.Solver #-}
 
 module Main where
@@ -39,8 +40,34 @@ test8 _ _ = natVal (Proxy :: Proxy (Min n m + 1))
 test9 :: forall n m . (KnownNat m, KnownNat n, n <= m) => Proxy m -> Proxy n -> Integer
 test9 _ _ = natVal (Proxy :: Proxy (m-n))
 
+test10 :: forall (n :: Nat) m . (KnownNat m) => Proxy m -> Proxy n -> Integer
+test10 _ _ = natVal (Proxy :: Proxy (m-n+n))
+
 test11 :: forall m . (KnownNat m) => Proxy m -> Integer
 test11 _ = natVal (Proxy @ (m*m))
+
+data SNat :: Nat -> * where
+  SNat :: KnownNat n => SNat n
+
+instance Show (SNat n) where
+  show s@SNat = show (natVal s)
+
+addSNat :: SNat a -> SNat b -> SNat (a + b)
+addSNat SNat SNat = SNat
+
+mulSNat :: SNat a -> SNat b -> SNat (a * b)
+mulSNat SNat SNat = SNat
+
+expSNat :: SNat a -> SNat b -> SNat (a ^ b)
+expSNat SNat SNat = SNat
+
+subSNat :: (b <= a) => SNat a -> SNat b -> SNat (a - b)
+subSNat SNat SNat = SNat
+
+-- The (a <= a + 1) constraint is the GHC.TypeLits.Normalisation plugin not
+-- handling inequalities (yet)
+test12 :: (a <= a + 1) => SNat (a+1) -> SNat a -> SNat 1
+test12 = subSNat
 
 tests :: TestTree
 tests = testGroup "ghc-typelits-natnormalise"
@@ -80,6 +107,14 @@ tests = testGroup "ghc-typelits-natnormalise"
     [ testCase "KnownNat m => KnownNat (m*m); @ 5" $
       show (test11 (Proxy @ 5)) @?=
       "25"
+    ],
+    testGroup "Normalisation"
+    [ testCase "KnownNat (m-n+m) ~ KnownNat m" $
+      show (test10 (Proxy @ 12) (Proxy @8)) @?=
+      "12"
+    , testCase "SNat (a+1) - SNat a = SNat 1" $
+      show (test12 (SNat @ 11) (SNat @10)) @?=
+      "1"
     ]
   ]
 
