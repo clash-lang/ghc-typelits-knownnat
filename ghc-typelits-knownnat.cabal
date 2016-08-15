@@ -86,7 +86,8 @@ library
 
 test-suite test-ghc-typelits-knownat
   type:                exitcode-stdio-1.0
-  main-is:             Test.hs
+  main-is:             Main.hs
+  Other-Modules:       TestFunctions
   build-depends:       base                      >= 4.8 && <5,
                        ghc-typelits-knownnat     >= 0.1,
                        singletons                >= 2.2 && <3.0,
@@ -98,6 +99,5 @@ test-suite test-ghc-typelits-knownat
                        ScopedTypeVariables
                        TypeApplications
                        TypeOperators
-  ghc-options:         -main-is Test
   if flag(deverror)
     ghc-options:       -O0 -dcore-lint
