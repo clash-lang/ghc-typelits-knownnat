@@ -50,6 +50,10 @@ test15 _ _ = natVal (Proxy @ (Foo 1 + 7))
 test16 :: KnownNat (4 + Foo 1 + Foo 1) => Proxy (Foo 1) -> Proxy (4 + Foo 1 + Foo 1) -> Integer
 test16 _ _ = natVal (Proxy @ (Foo 1 + 7 + Foo 1))
 
+test17 :: KnownNat (4 + 2 * Foo 1 + Foo 1) => Proxy (Foo 1) -> Proxy (4 + 2 * Foo 1 + Foo 1) -> Integer
+test17 _ _ = natVal (Proxy @ (2 * Foo 1 + 7 + Foo 1))
+
+
 tests :: TestTree
 tests = testGroup "ghc-typelits-natnormalise"
   [ testGroup "Basic functionality"
@@ -99,6 +103,10 @@ tests = testGroup "ghc-typelits-natnormalise"
       (case fakeFooEvidence of
           Refl -> show $ test16 (Proxy @ (Foo 1)) (Proxy @ (4 + Foo 1 + Foo 1))) @?=
       "9"
+    , testCase "KnownNat (4 + 2 * Foo 1 + Foo 1) => KnownNat (2 * Foo 1 + 7 + Foo 1); @ Foo 1 ~ 1" $
+      (case fakeFooEvidence of
+          Refl -> show $ test17 (Proxy @ (Foo 1)) (Proxy @ (4 + 2 * Foo 1 + Foo 1))) @?=
+      "10"
     ]
   ]
 
