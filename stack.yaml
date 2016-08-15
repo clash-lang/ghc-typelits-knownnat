@@ -5,4 +5,4 @@ packages:
 
 flags:
   ghc-typelits-knownnat:
-    deverror: false
+    deverror: true

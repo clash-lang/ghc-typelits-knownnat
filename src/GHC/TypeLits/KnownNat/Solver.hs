@@ -72,12 +72,12 @@ import TcPluginM  (TcPluginM, tcLookupClass, getInstEnvs, zonkCt)
 import TcRnTypes  (Ct, CtEvidence (..), TcPlugin(..), TcPluginResult (..),
                    ctEvidence, ctEvPred, isWanted)
 import Type       (PredTree (ClassPred), classifyPredType, dropForAlls, eqType,
-                   funResultTy, tyConAppTyCon_maybe, mkNumLitTy)
+                   funResultTy, tyConAppTyCon_maybe)
 import TyCoRep    (Type (..), TyLit (..))
 import Var        (DFunId, EvVar)
 
 import TyCon      (tyConName)
-import Type       (mkStrLitTy)
+import Type       (mkStrLitTy, piResultTys, splitTyConApp_maybe)
 import Module     (moduleName, moduleNameString)
 import Name       (nameModule_maybe, nameOccName)
 import OccName    (occNameString)
@@ -209,7 +209,7 @@ constraintToEvTerm defs kn_map (ct,cls,op) = (fmap (first (,ct))) <$> go op
                tcS = occNameString (nameOccName tcNm)
                fn  = mkStrLitTy (fsLit (mS ++ "." ++ tcS))
            ienv <- getInstEnvs
-           case lookupUniqueInstEnv ienv (kn2 defs) [fn,mkNumLitTy 0,mkNumLitTy 0] of
+           case lookupUniqueInstEnv ienv (kn2 defs) [fn,x,y] of
              Right (inst, _) -> runMaybeT $ do
                (xEv,newX) <- MaybeT (go x)
                (yEv,newY) <- MaybeT (go y)
@@ -218,7 +218,7 @@ constraintToEvTerm defs kn_map (ct,cls,op) = (fmap (first (,ct))) <$> go op
              _ -> return ((,[]) <$> (EvId <$> lookup (CType ty) kn_map))
     go ty = return ((,[]) <$> (EvId <$> lookup (CType ty) kn_map))
 
-{-
+{- |
 Given:
 
 * A "magic" class, and corresponding instance dictionary function, for a
@@ -226,16 +226,13 @@ Given:
 * Two KnownNat dictionaries
 
 makeOpDict instantiates the dictionary function with the KnownNat dictionaries,
-and coerces it to a KnownNat dictionary. i.e. for KnownNatAdd, the "magic"
-dictionary for addition, the coercion happens in the following steps:
+and coerces it to a KnownNat dictionary. i.e. for KnownNat2, the "magic"
+dictionary for binary functions, the coercion happens in the following steps:
 
-1. KnownNatAdd a b -> SNatKn (a + b)
-2. SNatKn (a + b)  -> Integer
-3. Integer         -> SNat (a + b)
-4. SNat (a + b)    -> KnownNat (a + b)
-
-The process is mirrored for KnownNatMul, and KnownNatExp, the classes
-representing multiplication and exponentiation.
+1. KnownNat2 "+" a b           -> SNatKn (KnownNatF2 "+" a b)
+2. SNatKn (KnownNatF2 "+" a b) -> Integer
+3. Integer                     -> SNat (a + b)
+4. SNat (a + b)                -> KnownNat (a + b)
 -}
 makeOpDict :: (Class,DFunId) -- ^ "magic" class function and dictionary function id
            -> Class          -- ^ KnownNat class
@@ -259,11 +256,11 @@ makeOpDict (opCls,dfid) knCls f x y z xEv yEv
   , Just (_, op_co_dict) <- tcInstNewTyCon_maybe (classTyCon opCls) [f,x,y]
     -- KnownNatAdd a b ~ SNatKn (a+b)
   , [ op_meth ] <- classMethods opCls
-  , Just op_tcRep <- tyConAppTyCon_maybe -- SNatKn
-                      $ funResultTy      -- SNatKn (a+b)
-                      $ dropForAlls      -- KnownNatAdd a b => SNatKn (a + b)
-                      $ idType op_meth   -- forall a b . KnownNatAdd a b => SNatKn (a+b)
-  , Just (_, op_co_rep) <- tcInstNewTyCon_maybe op_tcRep [z]
+  , Just (op_tcRep,op_args) <- splitTyConApp_maybe         -- (SNatKn, [KnownNatF2 f x y])
+                                 $ funResultTy             -- SNatKn (KnownNatF2 f x y)
+                                 $ (`piResultTys` [f,x,y]) -- KnownNatAdd f x y => SNatKn (KnownNatF2 f x y)
+                                 $ idType op_meth          -- forall f a b . KnownNat2 f a b => SNatKn (KnownNatF2 f a b)
+  , Just (_, op_co_rep) <- tcInstNewTyCon_maybe op_tcRep op_args
     -- SNatKn (a+b) ~ Integer
   , let dfun_inst = EvDFunApp dfid [x,y] [xEv,yEv]
         -- KnownNatAdd a b
