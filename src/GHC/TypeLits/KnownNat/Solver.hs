@@ -88,31 +88,46 @@ import Var        (DFunId, EvVar)
 -- | Map to normalize additions
 type Pluses = Data.Set.Set KnOp
 
+-- | Split up an KnownNat operation into the set of its additive terms,
+--   taking care of the necessary constant factors when the same terms
+--   occurs several times. Constants are accumulated after sorting.
 pluses :: KnOp -> Pluses
 pluses = Data.Set.fromList . map products . group . constants . sort . getPluses
   where products [p] = p
         products ps@(p:_) = p `Mul` I (fromIntegral $ length ps)
+        products _ = I 1 -- dead clause, never produced by 'group'
         constants (I a : I b : rest) = constants (I (a + b) : rest)
         constants others = others
 
+-- | Extract the set of additive terms as a list corresponding to the Ord
+--   constraint of KnOp. In particular this will place the constants in front
+--   when present.
 getPluses :: KnOp -> [KnOp]
 getPluses (a `Add` b) = getPluses a ++ getPluses b
-getPluses otherwise = pure otherwise
+getPluses other = pure other
 
-offset :: (KnOp -> Maybe t) -> (Type -> Type -> t -> Maybe t) -> KnOp -> [KnConstraint] -> Maybe t -> Maybe t
-offset _go _crc _want kn_givens found@Just{} = found
-offset go crc want kn_givens _ = do let knowns = (\(_,_,c)->c) <$> kn_givens
-                                        exploded = (pluses &&& id) <$> knowns
-                                        interesting = mapMaybe (\(summands, entire) ->
-                                                                  case (Data.Set.toList summands, Data.Set.toList (pluses want)) of
-                                                                    ([I n,C sty], [C wty]) | sty == wty -> Just (entire, n)
-                                                                    ((I n : srest), (I m : wrest)) | srest == wrest -> Just (entire, n - m)
-                                                                    _ -> Nothing
-                                                               ) exploded
-                                    ((h, corr):_) <- pure interesting
-                                    let x = h `Sub` I corr
-                                    ev <- go x
-                                    crc (reifyOp x) (reifyOp want) ev
+-- | Find a known constraint for a wanted, so that (modulo normalization)
+--   the two are a constant offset apart.
+offset :: (KnOp -> Maybe t) -> (Type -> Type -> t -> Maybe t) -> KnOp -> [KnConstraint] -> Maybe t
+offset go crc want kn_givens = do
+  let knowns = (\(_,_,c)->c) <$> kn_givens
+      -- pair up the sum-of-products knownNat constraints
+      -- with the original Nat operation
+      exploded = (pluses &&& id) <$> knowns
+      -- interesting cases for us are those where
+      -- wanted and given only differ by a constant
+      examine (summands, entire) =
+        case (Data.Set.toList summands, Data.Set.toList (pluses want)) of
+          ([I n,C sty],   [C wty]) | sty == wty -> Just (entire, n)
+          ((I n : srest), (I m : wrest)) | srest == wrest -> Just (entire, n - m)
+          _ -> Nothing
+      interesting = mapMaybe examine exploded
+  ((h, corr):_) <- pure interesting
+  let x = h `Sub` I corr
+  -- convert the first suitable evidence
+  ev <- go x
+  -- coerce it to the appropriate type
+  crc (reifyOp x) (reifyOp want) ev
 
 
 -- | Classes and instances from "GHC.TypeLits.KnownNat"
@@ -300,10 +315,10 @@ constraintToEvTerm defs kn_givens kn_map (ct,cls,op) = (,ct) <$> go op
   where
     isKnOp want (_,_,knOp) = want == knOp
     knCoercion = makeKnCoercion cls
-    go want | ((ct,_,_) : _) <- filter (isKnOp want) kn_givens = pure . EvId . ctev_evar . ctEvidence $ ct
+    go want | ((ct',_,_) : _) <- filter (isKnOp want) kn_givens = pure . EvId . ctev_evar . ctEvidence $ ct'
     go (I i)  = makeLitDict cls (mkNumLitTy i) i
-    go op@(C ty) = offset go knCoercion op kn_givens $ EvId <$> lookup ty kn_map
-    go clpx | found@Just{} <- offset go knCoercion clpx kn_givens Nothing = found
+    go (C ty) | found@Just{} <- EvId <$> lookup ty kn_map = found
+    go clpx | found@Just{} <- offset go knCoercion clpx kn_givens = found
     go e = do
       let (x,y,df) = case e of
             Add x' y' -> (x',y',knAddDFunId defs)
@@ -372,6 +387,23 @@ makeOpDict (opCls,dfid) knCls x y z xEv yEv
   | otherwise
   = Nothing
 
+{-
+Given:
+
+* A KnownNat dictionary evidence over a type x
+* a desired type z
+
+makeKnCoercion assembles a coercion from a KnownNat x
+dictionary to a KnownNat z dictionary and applies it
+to the passed-in evidence.
+
+The coercion happens in the following steps:
+
+1. KnownNat x -> SNat x
+2. SNat x     -> Integer
+3. Integer    -> SNat z
+4. SNat z     -> KnownNat z
+-}
 makeKnCoercion :: Class          -- ^ KnownNat class
                -> Type           -- ^ Type of the argument
                -> Type           -- ^ Type of the result
