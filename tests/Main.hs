@@ -41,15 +41,14 @@ test14 :: forall m . (KnownNat (4+m)) => Proxy (7+m) -> Integer
 test14 = natVal
 
 type family Foo (m :: Nat) = (result :: Nat) | result -> m
+fakeFooEvidence :: 1 :~: Foo 1
+fakeFooEvidence = unsafeCoerce Refl
+
 test15 :: KnownNat (4 + Foo 1) => Proxy (Foo 1) -> Proxy (4 + Foo 1) -> Integer
 test15 _ _ = natVal (Proxy @ (Foo 1 + 7))
-test15' :: Integer
-test15' = case unsafeCoerce Refl :: 1 :~: Foo 1 of Refl -> test15 (Proxy @ (Foo 1)) (Proxy @ (4 + Foo 1))
 
 test16 :: KnownNat (4 + Foo 1 + Foo 1) => Proxy (Foo 1) -> Proxy (4 + Foo 1 + Foo 1) -> Integer
 test16 _ _ = natVal (Proxy @ (Foo 1 + 7 + Foo 1))
-test16' :: Integer
-test16' = case unsafeCoerce Refl :: 1 :~: Foo 1 of Refl -> test16 (Proxy @ (Foo 1)) (Proxy @ (4 + Foo 1 + Foo 1))
 
 tests :: TestTree
 tests = testGroup "ghc-typelits-natnormalise"
@@ -93,10 +92,12 @@ tests = testGroup "ghc-typelits-natnormalise"
       show (test14 (Proxy @ 8)) @?=
       "8"
     , testCase "KnownNat (4 + Foo 1) => KnownNat (Foo 1 + 7); @ Foo 1 ~ 1" $
-      show test15' @?=
+      (case fakeFooEvidence of
+          Refl -> show $ test15 (Proxy @ (Foo 1)) (Proxy @ (4 + Foo 1))) @?=
       "8"
     , testCase "KnownNat (4 + Foo 1 + Foo 1) => KnownNat (Foo 1 + 7 + Foo 1); @ Foo 1 ~ 1" $
-      show test16' @?=
+      (case fakeFooEvidence of
+          Refl -> show $ test16 (Proxy @ (Foo 1)) (Proxy @ (4 + Foo 1 + Foo 1))) @?=
       "9"
     ]
   ]
