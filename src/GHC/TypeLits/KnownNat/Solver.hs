@@ -368,6 +368,9 @@ constraintToEvTerm defs givens (ct,cls,op) = do
               (S (P [I n]:srest),S (P [I m]:wrest))
                 | srest == wrest -> Just (entire, n - m)
 
+              (S srest,S wrest)
+                | srest == wrest -> Just (entire, 0)
+
               _ -> Nothing
           interesting = mapMaybe examine exploded
       -- convert the first suitable evidence
