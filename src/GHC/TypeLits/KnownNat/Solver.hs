@@ -355,7 +355,7 @@ constraintToEvTerm defs givens (ct,cls,op) = do
                        _ -> Nothing
           -- Get only the [G]iven KnownNat constraints
           knowns   = mapMaybe (unKn . unCType . fst) givens
-          -- pair up the sum-of-products knownNat constraints
+          -- pair up the sum-of-products KnownNat constraints
           -- with the original Nat operation
           exploded = map (normaliseNat &&& id) knowns
           -- interesting cases for us are those where
@@ -368,7 +368,7 @@ constraintToEvTerm defs givens (ct,cls,op) = do
               (S (P [I n]:srest),S (P [I m]:wrest))
                 | srest == wrest -> Just (entire, n - m)
 
-              (S srest,S wrest)
+              (S srest          ,S wrest)
                 | srest == wrest -> Just (entire, 0)
 
               _ -> Nothing
