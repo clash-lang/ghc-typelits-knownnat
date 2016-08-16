@@ -1,5 +1,5 @@
 {-# LANGUAGE DataKinds, GADTs, KindSignatures, ScopedTypeVariables, TypeOperators,
-             TypeApplications, FlexibleContexts #-}
+             TypeApplications, TypeFamilies, TypeFamilyDependencies, FlexibleContexts #-}
 
 {-# OPTIONS_GHC -fplugin GHC.TypeLits.Normalise       #-}
 {-# OPTIONS_GHC -fplugin GHC.TypeLits.KnownNat.Solver #-}
@@ -7,9 +7,11 @@
 module Main where
 
 import Data.Proxy
+import Data.Type.Equality ((:~:)(..))
 import GHC.TypeLits
 import Test.Tasty
 import Test.Tasty.HUnit
+import Unsafe.Coerce (unsafeCoerce)
 
 import TestFunctions
 
@@ -46,6 +48,28 @@ test10 _ _ = natVal (Proxy :: Proxy (m-n+n))
 test11 :: forall m . (KnownNat m) => Proxy m -> Integer
 test11 _ = natVal (Proxy @ (m*m))
 
+test12 :: forall m . (KnownNat (m+1)) => Proxy m -> Integer
+test12 = natVal
+
+test13 :: forall m . (KnownNat (m+3)) => Proxy m -> Integer
+test13 = natVal
+
+test14 :: forall m . (KnownNat (4+m)) => Proxy (7+m) -> Integer
+test14 = natVal
+
+type family Foo (m :: Nat) = (result :: Nat) | result -> m
+fakeFooEvidence :: 1 :~: Foo 1
+fakeFooEvidence = unsafeCoerce Refl
+
+test15 :: KnownNat (4 + Foo 1) => Proxy (Foo 1) -> Proxy (4 + Foo 1) -> Integer
+test15 _ _ = natVal (Proxy @ (Foo 1 + 7))
+
+test16 :: KnownNat (4 + Foo 1 + Foo 1) => Proxy (Foo 1) -> Proxy (4 + Foo 1 + Foo 1) -> Integer
+test16 _ _ = natVal (Proxy @ (Foo 1 + 7 + Foo 1))
+
+test17 :: KnownNat (4 + 2 * Foo 1 + Foo 1) => Proxy (Foo 1) -> Proxy (4 + 2 * Foo 1 + Foo 1) -> Integer
+test17 _ _ = natVal (Proxy @ (2 * Foo 1 + 7 + Foo 1))
+
 data SNat :: Nat -> * where
   SNat :: KnownNat n => SNat n
 
@@ -64,11 +88,11 @@ expSNat SNat SNat = SNat
 subSNat :: (b <= a) => SNat a -> SNat b -> SNat (a - b)
 subSNat SNat SNat = SNat
 
-test12 :: SNat (a+1) -> SNat a -> SNat 1
-test12 = subSNat
+test18 :: SNat (a+1) -> SNat a -> SNat 1
+test18 = subSNat
 
-test13 :: SNat (a+b) -> SNat b -> SNat a
-test13 = subSNat
+test19 :: SNat (a+b) -> SNat b -> SNat a
+test19 = subSNat
 
 tests :: TestTree
 tests = testGroup "ghc-typelits-natnormalise"
@@ -108,16 +132,40 @@ tests = testGroup "ghc-typelits-natnormalise"
     [ testCase "KnownNat m => KnownNat (m*m); @ 5" $
       show (test11 (Proxy @ 5)) @?=
       "25"
+    , testCase "KnownNat (m+1) => KnownNat m; @ m ~ 5" $
+      show (test12 (Proxy @ 5)) @?=
+      "5"
+    , testCase "KnownNat (m+1) => KnownNat m; @ m ~ 0" $
+      show (test12 (Proxy @ 0)) @?=
+      "0"
+    , testCase "KnownNat (m+3) => KnownNat m; @ m ~ 0" $
+      show (test13 (Proxy @ 0)) @?=
+      "0"
+    , testCase "KnownNat (4+m) => KnownNat (7+m); @ m ~ 1" $
+      show (test14 (Proxy @ 8)) @?=
+      "8"
+    , testCase "KnownNat (4 + Foo 1) => KnownNat (Foo 1 + 7); @ Foo 1 ~ 1" $
+      (case fakeFooEvidence of
+          Refl -> show $ test15 (Proxy @ (Foo 1)) (Proxy @ (4 + Foo 1))) @?=
+      "8"
+    , testCase "KnownNat (4 + Foo 1 + Foo 1) => KnownNat (Foo 1 + 7 + Foo 1); @ Foo 1 ~ 1" $
+      (case fakeFooEvidence of
+          Refl -> show $ test16 (Proxy @ (Foo 1)) (Proxy @ (4 + Foo 1 + Foo 1))) @?=
+      "9"
+    , testCase "KnownNat (4 + 2 * Foo 1 + Foo 1) => KnownNat (2 * Foo 1 + 7 + Foo 1); @ Foo 1 ~ 1" $
+      (case fakeFooEvidence of
+          Refl -> show $ test17 (Proxy @ (Foo 1)) (Proxy @ (4 + 2 * Foo 1 + Foo 1))) @?=
+      "10"
     ],
     testGroup "Normalisation"
     [ testCase "KnownNat (m-n+n) ~ KnownNat m" $
       show (test10 (Proxy @ 12) (Proxy @8)) @?=
       "12"
     , testCase "SNat (a+1) - SNat a = SNat 1" $
-      show (test12 (SNat @ 11) (SNat @10)) @?=
+      show (test18 (SNat @ 11) (SNat @10)) @?=
       "1"
     , testCase "SNat (a+b) - SNat b = SNat a" $
-      show (test13 (SNat @ 16) (SNat @10)) @?=
+      show (test19 (SNat @ 16) (SNat @10)) @?=
       "6"
     ]
   ]

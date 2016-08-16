@@ -51,10 +51,12 @@ Pragma to the header of your file.
 module GHC.TypeLits.KnownNat.Solver (plugin) where
 
 -- external
-import Control.Arrow                (first)
+import Control.Arrow                ((&&&), first)
+import Control.Monad.Trans.Maybe    (MaybeT (..))
 import Data.Maybe                   (catMaybes,mapMaybe)
 import GHC.TcPluginM.Extra          (lookupModule, lookupName, newWanted,
                                      tracePlugin)
+import GHC.TypeLits.Normalise.SOP   (SOP (..), Product (..), Symbol (..))
 import GHC.TypeLits.Normalise.Unify (CType (..),normaliseNat,reifySOP)
 
 -- GHC API
@@ -72,8 +74,9 @@ import TcEvidence (EvTerm (..), EvLit (EvNum), mkEvCast, mkTcSymCo, mkTcTransCo)
 import TcPluginM  (TcPluginM, tcLookupClass, getInstEnvs, zonkCt)
 import TcRnTypes  (Ct, TcPlugin(..), TcPluginResult (..), ctEvidence, ctEvPred,
                    ctEvTerm, ctLoc, isWanted, mkNonCanonical)
+import TcTypeNats (typeNatAddTyCon, typeNatSubTyCon)
 import Type       (PredTree (ClassPred), PredType, classifyPredType, dropForAlls,
-                   funResultTy, mkStrLitTy, mkTyConApp, piResultTys,
+                   funResultTy, mkNumLitTy, mkStrLitTy, mkTyConApp, piResultTys,
                    splitFunTys, splitTyConApp_maybe, tyConAppTyCon_maybe)
 import TyCon      (tyConName)
 import TyCoRep    (Type (..), TyLit (..))
@@ -193,7 +196,14 @@ constraintToEvTerm defs givens (ct,cls,op) = (fmap (first (,ct))) <$> go (normal
   where
     go :: Type -> TcPluginM (Maybe (EvTerm,[Ct]))
     go (LitTy (NumTyLit i)) = return ((,[]) <$> makeLitDict cls op i)
-    go ty@(TyConApp tc args)
+    go ty = do
+      offM <- offset ty
+      case offM of
+        found@Just{} -> return found
+        _ -> go' ty
+
+    go' :: Type -> TcPluginM (Maybe (EvTerm,[Ct]))
+    go' ty@(TyConApp tc args)
       | let tcNm = tyConName tc
       , Just m <- nameModule_maybe tcNm
       , Just knN_cls <- defs (length args)
@@ -213,7 +223,7 @@ constraintToEvTerm defs givens (ct,cls,op) = (fmap (first (,ct))) <$> go (normal
                (evs,new) <- unzip <$> mapM go_arg df_args
                return ((,concat new) <$> makeOpDict df cls args' op evs)
              _ -> return ((,[]) <$> go_other ty)
-    go ty = return ((,[]) <$> go_other ty)
+    go' ty = return ((,[]) <$> go_other ty)
 
     go_arg :: PredType -> TcPluginM (EvTerm,[Ct])
     go_arg ty = case lookup (CType ty) givens of
@@ -231,6 +241,35 @@ constraintToEvTerm defs givens (ct,cls,op) = (fmap (first (,ct))) <$> go (normal
                        then Just
                        else makeKnCoercion cls ty op
       in  cast =<< lookup (CType kn) givens
+
+    -- Find a known constraint for a wanted, so that (modulo normalization)
+    -- the two are a constant offset apart.
+    offset :: Type -> TcPluginM (Maybe (EvTerm,[Ct]))
+    offset want = runMaybeT $ do
+      let unKn ty' = case classifyPredType ty' of
+                       ClassPred cls' [ty'']
+                         | className cls' == knownNatClassName
+                         -> Just ty''
+                       _ -> Nothing
+          -- Get only the [G]iven KnownNat constraints
+          knowns   = mapMaybe (unKn . unCType . fst) givens
+          -- pair up the sum-of-products knownNat constraints
+          -- with the original Nat operation
+          exploded = map (normaliseNat &&& id) knowns
+          -- interesting cases for us are those where
+          -- wanted and given only differ by a constant
+          examine (summands,entire) =
+            case (summands,normaliseNat want) of
+              (S [P [I n],sty]  ,S [wty]) | sty == wty -> Just (entire, n)
+              (S (P [I n]:srest),S (P [I m]:wrest)) | srest == wrest -> Just (entire, n - m)
+              _ -> Nothing
+          interesting = mapMaybe examine exploded
+      -- convert the first suitable evidence
+      ((h,corr):_) <- pure interesting
+      let x = if corr < 0
+                 then mkTyConApp typeNatAddTyCon [h,mkNumLitTy (negate corr)]
+                 else mkTyConApp typeNatSubTyCon [h,mkNumLitTy corr]
+      MaybeT (go' x)
 
     normalise :: Type -> Type
     normalise = reifySOP . normaliseNat
