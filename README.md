@@ -41,7 +41,7 @@ type family Min (a :: Nat) (b :: Nat) :: Nat where
 the plugin can derive a `KnownNat (Min x y + 1)` constraint given only a
 `KnownNat (Min x y)` constraint:
 
-```
+```haskell
 g :: forall x y . (KnownNat (Min x y)) => Proxy x -> Proxy y -> Integer
 g _ _ = natVal (Proxy :: Proxy (Min x y + 1))
 ```
