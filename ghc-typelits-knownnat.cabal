@@ -87,7 +87,7 @@ library
   else
     ghc-options:       -Wall
 
-test-suite test-ghc-typelits-knownat
+test-suite test-ghc-typelits-knownnat
   type:                exitcode-stdio-1.0
   main-is:             Main.hs
   Other-Modules:       TestFunctions
