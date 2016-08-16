@@ -25,7 +25,7 @@ module GHC.TypeLits.KnownNat () where
 
 import Data.Bits    (shiftL)
 import Data.Proxy   (Proxy (..))
-import GHC.TypeLits (KnownNat, Nat, type (+), type (*), type (^), natVal)
+import GHC.TypeLits (KnownNat, Nat, type (+), type (-), type (*), type (^), natVal)
 
 newtype SNatKn (n :: Nat) = SNatKn Integer
 
@@ -35,6 +35,13 @@ class KnownNatAdd (a :: Nat) (b :: Nat) where
 instance (KnownNat a, KnownNat b) => KnownNatAdd a b where
   natSingAdd = SNatKn (natVal (Proxy @ a) + natVal (Proxy @ b))
   {-# INLINE natSingAdd #-}
+
+class KnownNatSubtract (a :: Nat) (b :: Nat) where
+  natSingSubtract :: SNatKn (a - b)
+
+instance (KnownNat a, KnownNat b) => KnownNatSubtract a b where
+  natSingSubtract = SNatKn (natVal (Proxy @ a) - natVal (Proxy @ b))
+  {-# INLINE natSingSubtract #-}
 
 class KnownNatMul (a :: Nat) (b :: Nat) where
   natSingMul :: SNatKn (a * b)
