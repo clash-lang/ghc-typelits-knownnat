@@ -52,11 +52,10 @@ module GHC.TypeLits.KnownNat.Solver (plugin) where
 
 -- external
 import Control.Arrow                (first)
-import Data.Coerce                  (coerce)
 import Data.Maybe                   (catMaybes,mapMaybe)
 import GHC.TcPluginM.Extra          (lookupModule, lookupName, newWanted,
                                      tracePlugin)
-import GHC.TypeLits.Normalise.Unify (normaliseNat,reifySOP)
+import GHC.TypeLits.Normalise.Unify (CType (..),normaliseNat,reifySOP)
 
 -- GHC API
 import Class      (Class, classMethods, className, classTyCon)
@@ -67,7 +66,6 @@ import InstEnv    (instanceDFunId,lookupUniqueInstEnv)
 import Module     (mkModuleName, moduleName, moduleNameString)
 import Name       (nameModule_maybe, nameOccName)
 import OccName    (mkTcOcc, occNameString)
-import Outputable (Outputable (..))
 import Plugins    (Plugin (..), defaultPlugin)
 import PrelNames  (knownNatClassName)
 import TcEvidence (EvTerm (..), EvLit (EvNum), mkEvCast, mkTcSymCo, mkTcTransCo)
@@ -75,7 +73,7 @@ import TcPluginM  (TcPluginM, tcLookupClass, getInstEnvs, zonkCt)
 import TcRnTypes  (Ct, TcPlugin(..), TcPluginResult (..), ctEvidence, ctEvPred,
                    ctEvTerm, ctLoc, isWanted, mkNonCanonical)
 import Type       (PredTree (ClassPred), PredType, classifyPredType, dropForAlls,
-                   eqType, funResultTy, mkStrLitTy, mkTyConApp, piResultTys,
+                   funResultTy, mkStrLitTy, mkTyConApp, piResultTys,
                    splitFunTys, splitTyConApp_maybe, tyConAppTyCon_maybe)
 import TyCon      (tyConName)
 import TyCoRep    (Type (..), TyLit (..))
@@ -89,12 +87,6 @@ type KnConstraint = (Ct    -- The constraint
                     ,Class -- KnownNat class
                     ,Type  -- The argument to KnownNat
                     )
-
-newtype CType = CType Type
-  deriving Outputable
-
-instance Eq CType where
-  (==) = coerce eqType
 
 {-|
 A type checker plugin for GHC that can derive \"complex\" @KnownNat@

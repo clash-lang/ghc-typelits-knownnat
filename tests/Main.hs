@@ -64,10 +64,11 @@ expSNat SNat SNat = SNat
 subSNat :: (b <= a) => SNat a -> SNat b -> SNat (a - b)
 subSNat SNat SNat = SNat
 
--- The (a <= a + 1) constraint is the GHC.TypeLits.Normalisation plugin not
--- handling inequalities (yet)
-test12 :: (a <= a + 1) => SNat (a+1) -> SNat a -> SNat 1
+test12 :: SNat (a+1) -> SNat a -> SNat 1
 test12 = subSNat
+
+test13 :: SNat (a+b) -> SNat b -> SNat a
+test13 = subSNat
 
 tests :: TestTree
 tests = testGroup "ghc-typelits-natnormalise"
@@ -115,6 +116,9 @@ tests = testGroup "ghc-typelits-natnormalise"
     , testCase "SNat (a+1) - SNat a = SNat 1" $
       show (test12 (SNat @ 11) (SNat @10)) @?=
       "1"
+    , testCase "SNat (a+b) - SNat b = SNat a" $
+      show (test13 (SNat @ 16) (SNat @10)) @?=
+      "6"
     ]
   ]
 
