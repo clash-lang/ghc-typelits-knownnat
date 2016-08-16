@@ -23,7 +23,7 @@ f _ = natVal (Proxy :: Proxy n) + natVal (Proxy :: Proxy (n+2))
 
 The plugin can derive `KnownNat` constraints for types consisting of:
 
-* Type variables, when there is a corresponding @KnownNat@ constraint
+* Type variables, when there is a corresponding `KnownNat` constraint
 * Type-level naturals
 * Applications of the arithmetic expression: `{+,-,*,^}`
 * Type functions, when there is either:
