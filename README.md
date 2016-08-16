@@ -70,7 +70,7 @@ the plugin can derive a `KnownNat (Max x y + 1)` constraint given only a
 `KnownNat x` and `KnownNat y` constraint:
 
 ```haskell
-h :: forall x x . (KnownNat x, KnownNat y) => Proxy x -> Proxy y -> Integer
+h :: forall x y . (KnownNat x, KnownNat y) => Proxy x -> Proxy y -> Integer
 h _ _ = natVal (Proxy :: Proxy (Max x y + 1))
 ```
 
