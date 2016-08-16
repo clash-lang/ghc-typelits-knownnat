@@ -70,7 +70,7 @@ import Name       (nameModule_maybe, nameOccName)
 import OccName    (mkTcOcc, occNameString)
 import Plugins    (Plugin (..), defaultPlugin)
 import PrelNames  (knownNatClassName)
-import TcEvidence (EvTerm (..), EvLit (EvNum), mkEvCast, mkTcSymCo, mkTcTransCo)
+import TcEvidence (EvTerm (..), mkEvCast, mkTcSymCo, mkTcTransCo)
 import TcPluginM  (TcPluginM, tcLookupClass, getInstEnvs, zonkCt)
 import TcRnTypes  (Ct, TcPlugin(..), TcPluginResult (..), ctEvidence, ctEvPred,
                    ctEvTerm, ctLoc, isWanted, mkNonCanonical)
@@ -79,7 +79,7 @@ import Type       (PredTree (ClassPred), PredType, classifyPredType, dropForAlls
                    funResultTy, mkNumLitTy, mkStrLitTy, mkTyConApp, piResultTys,
                    splitFunTys, splitTyConApp_maybe, tyConAppTyCon_maybe)
 import TyCon      (tyConName)
-import TyCoRep    (Type (..), TyLit (..))
+import TyCoRep    (Type (..))
 import Var        (DFunId)
 
 -- | Classes and instances from "GHC.TypeLits.KnownNat"
@@ -169,6 +169,11 @@ toGivenEntry ct = let ct_ev = ctEvidence ct
                       ev    = ctEvTerm   ct_ev
                   in  (CType c_ty,ev)
 
+-- | Normalise a type to Sum-of-Product type form as defined in the
+-- `ghc-typelits-natnormalise` package.
+normaliseSOP :: Type -> Type
+normaliseSOP = reifySOP . normaliseNat
+
 -- | Find the \"magic\" classes and instances in "GHC.TypeLits.KnownNat"
 lookupKnownNatDefs :: TcPluginM KnownNatDefs
 lookupKnownNatDefs = do
@@ -192,18 +197,24 @@ constraintToEvTerm :: KnownNatDefs     -- ^ The "magic" KnownNatN classes
                    -> [(CType,EvTerm)] -- All the [G]iven constraints
                    -> KnConstraint
                    -> TcPluginM (Maybe ((EvTerm,Ct),[Ct]))
-constraintToEvTerm defs givens (ct,cls,op) = (fmap (first (,ct))) <$> go (normalise op)
+constraintToEvTerm defs givens (ct,cls,op) = do
+    -- 1. Normalise to SOP normal form
+    let ty = normaliseSOP op
+    -- 2. Determine if we are an offset apart from a [G]iven constraint
+    offsetM <- offset ty
+    evM     <- case offsetM of
+                 -- 3.a If so, we are done
+                 found@Just {} -> return found
+                 -- 3.b If not, we check if the outer type-level operation
+                 -- has a corresponding KnownNat<N> instance.
+                 _ -> go ty
+    return (first (,ct) <$> evM)
   where
+    -- Determine whether the outer type-level operation has a corresponding
+    -- KnownNat<N> instance, where /N/ corresponds to the arity of the
+    -- type-level operation
     go :: Type -> TcPluginM (Maybe (EvTerm,[Ct]))
-    go (LitTy (NumTyLit i)) = return ((,[]) <$> makeLitDict cls op i)
-    go ty = do
-      offM <- offset ty
-      case offM of
-        found@Just{} -> return found
-        _ -> go' ty
-
-    go' :: Type -> TcPluginM (Maybe (EvTerm,[Ct]))
-    go' ty@(TyConApp tc args)
+    go ty@(TyConApp tc args)
       | let tcNm = tyConName tc
       , Just m <- nameModule_maybe tcNm
       , Just knN_cls <- defs (length args)
@@ -216,23 +227,27 @@ constraintToEvTerm defs givens (ct,cls,op) = (fmap (first (,ct))) <$> go (normal
              Right (inst, _) -> do
                let df_id   = instanceDFunId inst
                    df      = (knN_cls,df_id)
-                   df_args = fst
-                           . splitFunTys
-                           . (`piResultTys` args)
-                           $ idType df_id
+                   df_args = fst                  -- [KnownNat x, KnownNat y]
+                           . splitFunTys          -- ([KnownNat x, KnowNat y], DKnownNat2 "+" x y)
+                           . (`piResultTys` args) -- (KnowNat x, KnownNat y) => DKnownNat2 "+" x y
+                           $ idType df_id         -- forall a b . (KnownNat a, KnownNat b) => DKnownNat2 "+" a b
                (evs,new) <- unzip <$> mapM go_arg df_args
                return ((,concat new) <$> makeOpDict df cls args' op evs)
              _ -> return ((,[]) <$> go_other ty)
-    go' ty = return ((,[]) <$> go_other ty)
+    go ty = return ((,[]) <$> go_other ty)
 
+    -- Get EvTerm arguments for type-level operations. If they do not exist
+    -- as [G]iven constraints, then generate new [W]anted constraints
     go_arg :: PredType -> TcPluginM (EvTerm,[Ct])
     go_arg ty = case lookup (CType ty) givens of
       Just ev -> return (ev,[])
-      _       -> do
+      _ -> do
         wanted <- newWanted (ctLoc ct) ty
         let ev = ctEvTerm wanted
         return (ev,[mkNonCanonical wanted])
 
+    -- Fall through case: look up the normalised [W]anted constraint in the list
+    -- of [G]iven constraints.
     go_other :: Type -> Maybe EvTerm
     go_other ty =
       let knClsTc = classTyCon cls
@@ -260,8 +275,12 @@ constraintToEvTerm defs givens (ct,cls,op) = (fmap (first (,ct))) <$> go (normal
           -- wanted and given only differ by a constant
           examine (summands,entire) =
             case (summands,normaliseNat want) of
-              (S [P [I n],sty]  ,S [wty]) | sty == wty -> Just (entire, n)
-              (S (P [I n]:srest),S (P [I m]:wrest)) | srest == wrest -> Just (entire, n - m)
+              (S [P [I n],sty]  ,S [wty])
+                | sty == wty -> Just (entire, n)
+
+              (S (P [I n]:srest),S (P [I m]:wrest))
+                | srest == wrest -> Just (entire, n - m)
+
               _ -> Nothing
           interesting = mapMaybe examine exploded
       -- convert the first suitable evidence
@@ -269,10 +288,7 @@ constraintToEvTerm defs givens (ct,cls,op) = (fmap (first (,ct))) <$> go (normal
       let x = if corr < 0
                  then mkTyConApp typeNatAddTyCon [h,mkNumLitTy (negate corr)]
                  else mkTyConApp typeNatSubTyCon [h,mkNumLitTy corr]
-      MaybeT (go' x)
-
-    normalise :: Type -> Type
-    normalise = reifySOP . normaliseNat
+      MaybeT (go x)
 
 {- |
 Given:
@@ -361,28 +377,3 @@ makeKnCoercion knCls x z xEv
     -- SNat x ~ KnownNat x
   = Just . mkEvCast xEv $ (kn_co_dict_x `mkTcTransCo` kn_co_rep_x) `mkTcTransCo` mkTcSymCo (kn_co_dict_z `mkTcTransCo` kn_co_rep_z)
   | otherwise = Nothing
-
--- | THIS CODE IS COPIED FROM:
--- https://github.com/ghc/ghc/blob/8035d1a5dc7290e8d3d61446ee4861e0b460214e/compiler/typecheck/TcInteract.hs#L1973
---
--- makeLitDict adds a coercion that will convert the literal into a dictionary
--- of the appropriate type.  See Note [KnownNat & KnownSymbol and EvLit]
--- in TcEvidence.  The coercion happens in 2 steps:
---
---     Integer -> SNat n     -- representation of literal to singleton
---     SNat n  -> KnownNat n -- singleton to dictionary
-makeLitDict :: Class -> Type -> Integer -> Maybe EvTerm
-makeLitDict clas ty i
-  | Just (_, co_dict) <- tcInstNewTyCon_maybe (classTyCon clas) [ty]
-    -- co_dict :: KnownNat n ~ SNat n
-  , [ meth ]   <- classMethods clas
-  , Just tcRep <- tyConAppTyCon_maybe -- SNat
-                    $ funResultTy     -- SNat n
-                    $ dropForAlls     -- KnownNat n => SNat n
-                    $ idType meth     -- forall n. KnownNat n => SNat n
-  , Just (_, co_rep) <- tcInstNewTyCon_maybe tcRep [ty]
-        -- SNat n ~ Integer
-  , let ev_tm = mkEvCast (EvLit (EvNum i)) (mkTcSymCo (mkTcTransCo co_dict co_rep))
-  = Just ev_tm
-  | otherwise
-  = Nothing
