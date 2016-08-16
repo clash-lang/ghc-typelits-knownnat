@@ -9,27 +9,70 @@ constraints from other simple/variable `KnownNat` constraints. i.e. without this
 plugin, you must have both a `KnownNat n` and a `KnownNat (n+2)` constraint in
 the type signature of the following function:
 
-```
+```haskell
 f :: forall n . (KnownNat n, KnownNat (n+2)) => Proxy n -> Integer
 f _ = natVal (Proxy :: Proxy n) + natVal (Proxy :: Proxy (n+2))
 ```
 
 Using the plugin you can omit the `KnownNat (n+2)` constraint:
 
-```
+```haskell
 f :: forall n . KnownNat n => Proxy n -> Integer
 f _ = natVal (Proxy :: Proxy n) + natVal (Proxy :: Proxy (n+2))
 ```
 
-The plugin can only derive `KnownNat` constraints consisting of:
+The plugin can derive `KnownNat` constraints for types consisting of:
 
+* Type variables, when there is a corresponding @KnownNat@ constraint
 * Type-level naturals
-* Type variables, when there is a matching given `KnownNat` constraint
-* Applications of the arithmetic expression: `{+,*,^}`; i.e. it _cannot_ derive
-  a `KnownNat (n-1)` constraint given a `KnownNat n` constraint
-* All other types, when there is a matching given `KnownNat` constraint; i.e.
-  It _can_ derive a `KnownNat (Max x y + 1)` constraint given a
-  `KnownNat (Max x y)` constraint.
+* Applications of the arithmetic expression: `{+,-,*,^}`
+* Type functions, when there is either:
+  * a matching given `KnownNat` constraint; or
+  * a corresponding `KnownNat<N>` instance for the type function
+
+To elaborate the latter points, given the type family `Min`:
+
+```haskell
+type family Min (a :: Nat) (b :: Nat) :: Nat where
+  Min 0 b = 0
+  Min a b = If (a <=? b) a b
+```
+
+the plugin can derive a `KnownNat (Min x y + 1)` constraint given only a
+`KnownNat (Min x y)` constraint:
+
+```
+g :: forall x y . (KnownNat (Min x y)) => Proxy x -> Proxy y -> Integer
+g _ _ = natVal (Proxy :: Proxy (Min x y + 1))
+```
+
+And, given the type family `Max`:
+
+```haskell
+type family Max (a :: Nat) (b :: Nat) :: Nat where
+  Max 0 b = b
+  Max a b = If (a <=? b) b a
+```
+
+and corresponding `KnownNat2` instance:
+
+```haskell
+instance (KnownNat a, KnownNat b) => KnownNat2 "TestFunctions.Max" a b where
+  type KnownNatF2 "TestFunctions.Max" = MaxSym2
+  natSing2 = let x = natVal (Proxy @ a)
+                 y = natVal (Proxy @ b)
+                 z = max x y
+             in  SNatKn z
+  {-# INLINE natSing2 #-}
+```
+
+the plugin can derive a `KnownNat (Max x y + 1)` constraint given only a
+`KnownNat x` and `KnownNat y` constraint:
+
+```haskell
+h :: forall x x . (KnownNat x, KnownNat y) => Proxy x -> Proxy y -> Integer
+h _ _ = natVal (Proxy :: Proxy (Max x y + 1))
+```
 
 To use the plugin, add the
 

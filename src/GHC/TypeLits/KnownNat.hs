@@ -32,6 +32,7 @@ import GHC.TypeLits           (KnownNat, Nat, Symbol, type (<=), natVal)
 import Data.Singletons        (type (~>), type (@@))
 import Data.Promotion.Prelude (type (:+$), type (:*$), type (:^$), type (:-$))
 
+-- | Singleton natural number (represented by an integer)
 newtype SNatKn (n :: Nat) = SNatKn Integer
 
 -- | Class for arithmetic functions with /two/ arguments.
@@ -44,16 +45,19 @@ class KnownNat3 (f :: Symbol) (a :: Nat) (b :: Nat) (c :: Nat) where
   type KnownNatF3 f :: Nat ~> Nat ~> Nat ~> Nat
   natSing3 :: SNatKn (KnownNatF3 f @@ a @@ b @@ c)
 
+-- | 'KnownNat2' instance for "GHC.TypeLits"' 'GHC.TypeLits.+'
 instance (KnownNat a, KnownNat b) => KnownNat2 "GHC.TypeLits.+" a b where
   type KnownNatF2 "GHC.TypeLits.+" = (:+$)
   natSing2 = SNatKn (natVal (Proxy @a) + natVal (Proxy @b))
   {-# INLINE natSing2 #-}
 
+-- | 'KnownNat2' instance for "GHC.TypeLits"' 'GHC.TypeLits.*'
 instance (KnownNat a, KnownNat b) => KnownNat2 "GHC.TypeLits.*" a b where
   type KnownNatF2 "GHC.TypeLits.*" = (:*$)
   natSing2 = SNatKn (natVal (Proxy @a) * natVal (Proxy @b))
   {-# INLINE natSing2 #-}
 
+-- | 'KnownNat2' instance for "GHC.TypeLits"' 'GHC.TypeLits.^'
 instance (KnownNat a, KnownNat b) => KnownNat2 "GHC.TypeLits.^" a b where
   type KnownNatF2 "GHC.TypeLits.^" = (:^$)
   natSing2 = let x = natVal (Proxy @ a)
@@ -64,6 +68,7 @@ instance (KnownNat a, KnownNat b) => KnownNat2 "GHC.TypeLits.^" a b where
              in  SNatKn z
   {-# INLINE natSing2 #-}
 
+-- | 'KnownNat2' instance for "GHC.TypeLits"' 'GHC.TypeLits.-'
 instance (KnownNat a, KnownNat b, b <= a) => KnownNat2 "GHC.TypeLits.-" a b where
   type KnownNatF2 "GHC.TypeLits.-" = (:-$)
   natSing2 = SNatKn (natVal (Proxy @a) - natVal (Proxy @b))

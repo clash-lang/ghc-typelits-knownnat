@@ -19,18 +19,19 @@ description:
   f _ = natVal (Proxy :: Proxy n) + natVal (Proxy :: Proxy (n+2))
   @
   .
-  The plugin can only derive @KnownNat@ constraints consisting of:
+  The plugin can derive @KnownNat@ constraints for types consisting of:
+  .
+  * Type variables, when there is a corresponding @KnownNat@ constraint
   .
   * Type-level naturals
   .
-  * Type variables, when there is a matching given @KnownNat@ constraint
+  * Applications of the arithmetic expression: +,-,*,^
   .
-  * Applications of the arithmetic expression: +,*,^; i.e. it /cannot/ derive a
-    @KnownNat (n-1)@ constraint given a @KnownNat n@ constraint
+  * Type functions, when there is either:
   .
-  * All other types, when there is a matching given @KnownNat@ constraint; i.e.
-    It /can/ derive a @KnownNat (Max x y + 1)@ constraint given a
-    @KnownNat (Max x y)@ constraint.
+          1. a matching given @KnownNat@ constraint; or
+  .
+          2. a corresponding @KnownNat\<N\>@ instance for the type function
   .
   To use the plugin, add the
   .
