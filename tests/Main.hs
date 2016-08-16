@@ -110,7 +110,7 @@ tests = testGroup "ghc-typelits-natnormalise"
       "25"
     ],
     testGroup "Normalisation"
-    [ testCase "KnownNat (m-n+m) ~ KnownNat m" $
+    [ testCase "KnownNat (m-n+n) ~ KnownNat m" $
       show (test10 (Proxy @ 12) (Proxy @8)) @?=
       "12"
     , testCase "SNat (a+1) - SNat a = SNat 1" $
