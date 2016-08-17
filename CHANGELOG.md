@@ -2,9 +2,9 @@
 
 ## 0.2 *August 17th 2016*
 * New features:
-  * Handle GHC.TypeLits.-
+  * Handle `GHC.TypeLits.-`
   * Handle custom, user-defined, type-level operations
-  * Thanks to Gabor Greif (@ggreif): derive smaller from large constraints, i.e. `KnownNat (n+1)` implies `KnownNat n`
+  * Thanks to Gabor Greif (@ggreif): derive smaller from larger constraints, i.e. `KnownNat (n+1)` implies `KnownNat n`
 
 ## 0.1.2
 * New features: Solve "complex" KnownNat constraints involving arbitrary type-functions, as long as there is a given KnownNat constraint for this type functions.
