@@ -32,6 +32,12 @@ import Data.Proxy             (Proxy (..))
 import Data.Singletons        (Apply, type (~>))
 import GHC.TypeLits.KnownNat
 
+data MaxSym1 :: Nat -> Nat ~> Nat
+data MaxSym2 :: Nat ~> Nat ~> Nat
+
+type instance Apply MaxSym2 a     = (MaxSym1 a)
+type instance Apply (MaxSym1 a) b = Max a b
+
 instance (KnownNat a, KnownNat b) => 'KnownNat2' $('nameToSymbol' ''Max) a b where
   type 'KnownNatF2' $('nameToSymbol' ''Max) = MaxSym2
   natSing2 = let x = natVal (Proxy @a)
