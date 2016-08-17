@@ -1,12 +1,12 @@
 {-# LANGUAGE FlexibleInstances, MultiParamTypeClasses, ScopedTypeVariables,
              TypeApplications, TypeFamilies, TypeInType, TypeOperators,
-             UndecidableInstances #-}
+             UndecidableInstances, TemplateHaskell #-}
 
 module TestFunctions where
 
 import Data.Proxy              (Proxy (..))
 import Data.Singletons         (Apply, type (~>))
-import Data.Singletons.Prelude (If)
+import Data.Type.Bool          (If)
 import GHC.TypeLits.KnownNat
 import GHC.TypeLits
 
@@ -20,8 +20,8 @@ data MaxSym2 :: Nat ~> Nat ~> Nat
 type instance Apply MaxSym2 a     = (MaxSym1 a)
 type instance Apply (MaxSym1 a) b = Max a b
 
-instance (KnownNat a, KnownNat b) => KnownNat2 "TestFunctions.Max" a b where
-  type KnownNatF2 "TestFunctions.Max" = MaxSym2
+instance (KnownNat a, KnownNat b) => KnownNat2 $(nameToSymbol ''Max) a b where
+  type KnownNatF2 $(nameToSymbol ''Max) = MaxSym2
   natSing2 = let x = natVal (Proxy @ a)
                  y = natVal (Proxy @ b)
                  z = max x y

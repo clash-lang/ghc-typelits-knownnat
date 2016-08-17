@@ -83,9 +83,8 @@ Pragma to the header of your file.
 
 -}
 
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE LambdaCase                 #-}
-{-# LANGUAGE TupleSections              #-}
+{-# LANGUAGE LambdaCase    #-}
+{-# LANGUAGE TupleSections #-}
 
 {-# LANGUAGE Trustworthy   #-}
 
