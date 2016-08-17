@@ -1,6 +1,6 @@
 # Changelog for the [`ghc-typelits-knownnat`](http://hackage.haskell.org/package/ghc-typelits-knownnat) package
 
-## 0.2
+## 0.2 *August 17th 2016*
 * New features:
   * Handle GHC.TypeLits.-
   * Handle custom, user-defined, type-level operations
