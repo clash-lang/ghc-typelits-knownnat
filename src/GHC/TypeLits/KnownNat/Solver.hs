@@ -362,9 +362,9 @@ constraintToEvTerm defs givens (ct,cls,op) = do
           exploded = map (normaliseNat . subWant &&& id) knowns
           -- interesting cases for us are those where
           -- wanted and given only differ by a constant
-          examine (S [P [I n]],entire) = Just (entire,n)
-          examine _ -> Nothing
-          interesting = mapMaybe examine exploded
+          examineDiff (S [P [I n]]) entire  = Just (entire,n)
+          examineDiff _ _ = Nothing
+          interesting = mapMaybe (uncurry examineDiff) exploded
       -- convert the first suitable evidence
       ((h,corr):_) <- pure interesting
       let x = case corr of
