@@ -80,6 +80,7 @@ library
                        TypeFamilies
                        TypeInType
                        UndecidableInstances
+                       ViewPatterns
   build-depends:       base                      >= 4.9      && <4.10,
                        ghc                       >= 8.0.1    && <8.2,
                        ghc-tcplugins-extra       >= 0.2,
