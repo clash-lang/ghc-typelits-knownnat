@@ -24,22 +24,19 @@ constraints over @Max@, given just 'KnownNat' constraints for the arguments
 of @Max@, then you must define:
 
 @
-\{\-# LANGUAGE FlexibleInstances, MultiParamTypeClasses, ScopedTypeVariables,
-             TypeApplications, TypeFamilies, TypeInType, TypeOperators,
-             UndecidableInstances, TemplateHaskell \#-\}
+\{\-# LANGUAGE DataKinds, FlexibleInstances, GADTs, KindSignatures,
+             MultiParamTypeClasses, ScopedTypeVariables, TemplateHaskell,
+             TypeApplications, TypeFamilies, TypeOperators,
+             UndecidableInstances \#-\}
 
-import Data.Proxy             (Proxy (..))
-import Data.Singletons        (Apply, type (~>))
+import Data.Proxy            (Proxy (..))
+import Data.Singletons.TH    (genDefunSymbols)
 import GHC.TypeLits.KnownNat
 
-data MaxSym1 :: Nat -> Nat ~> Nat
-data MaxSym2 :: Nat ~> Nat ~> Nat
-
-type instance Apply MaxSym2 a     = (MaxSym1 a)
-type instance Apply (MaxSym1 a) b = Max a b
+$(genDefunSymbols [''Max]) -- creates the \'MaxSym0\' symbol
 
 instance (KnownNat a, KnownNat b) => 'KnownNat2' $('nameToSymbol' ''Max) a b where
-  type 'KnownNatF2' $('nameToSymbol' ''Max) = MaxSym2
+  type 'KnownNatF2' $('nameToSymbol' ''Max) = MaxSym0
   natSing2 = let x = natVal (Proxy @a)
                  y = natVal (Proxy @b)
                  z = max x y

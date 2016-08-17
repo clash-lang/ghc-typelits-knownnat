@@ -118,7 +118,6 @@ test-suite test-ghc-typelits-knownnat
                        TypeApplications
                        TypeFamilies
                        TypeFamilyDependencies
-                       TypeInType
                        TypeOperators
                        UndecidableInstances
   if flag(deverror)
