@@ -85,6 +85,7 @@ Pragma to the header of your file.
 
 {-# LANGUAGE LambdaCase    #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE ViewPatterns  #-}
 
 {-# LANGUAGE Trustworthy   #-}
 
@@ -300,6 +301,7 @@ constraintToEvTerm defs givens (ct,cls,op) = do
     -- KnownNat<N> instance, where /N/ corresponds to the arity of the
     -- type-level operation
     go :: Type -> TcPluginM (Maybe (EvTerm,[Ct]))
+    go (go_other -> Just ev) = return (Just (ev,[]))
     go ty@(TyConApp tc args)
       | let tcNm = tyConName tc
       , Just m <- nameModule_maybe tcNm
@@ -320,7 +322,7 @@ constraintToEvTerm defs givens (ct,cls,op) = do
                (evs,new) <- unzip <$> mapM go_arg df_args
                return ((,concat new) <$> makeOpDict df cls args' op evs)
              _ -> return ((,[]) <$> go_other ty)
-    go ty = return ((,[]) <$> go_other ty)
+    go _ = return Nothing
 
     -- Get EvTerm arguments for type-level operations. If they do not exist
     -- as [G]iven constraints, then generate new [W]anted constraints
@@ -367,9 +369,10 @@ constraintToEvTerm defs givens (ct,cls,op) = do
           interesting = mapMaybe examine exploded
       -- convert the first suitable evidence
       ((h,corr):_) <- pure interesting
-      let x = if corr < 0
-                 then mkTyConApp typeNatAddTyCon [h,mkNumLitTy (negate corr)]
-                 else mkTyConApp typeNatSubTyCon [h,mkNumLitTy corr]
+      let x = case corr of
+                0 -> h
+                _ | corr < 0  -> mkTyConApp typeNatAddTyCon [h,mkNumLitTy (negate corr)]
+                  | otherwise -> mkTyConApp typeNatSubTyCon [h,mkNumLitTy corr]
       MaybeT (go x)
 
 {- |
