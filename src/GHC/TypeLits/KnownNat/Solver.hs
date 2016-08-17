@@ -357,20 +357,13 @@ constraintToEvTerm defs givens (ct,cls,op) = do
           knowns   = mapMaybe (unKn . unCType . fst) givens
           -- pair up the sum-of-products KnownNat constraints
           -- with the original Nat operation
-          exploded = map (normaliseNat &&& id) knowns
+          subWant  = mkTyConApp typeNatSubTyCon . (:[want])
+          exploded = map (normaliseNat . subWant &&& id) knowns
           -- interesting cases for us are those where
           -- wanted and given only differ by a constant
-          examine (summands,entire) =
-            case (summands,normaliseNat want) of
-              (S [P [I n],sty]  ,S [wty])
-                | sty == wty -> Just (entire, n)
-
-              (S (P [I n]:srest),S (P [I m]:wrest))
-                | srest == wrest -> Just (entire, n - m)
-
-              (S srest          ,S wrest)
-                | srest == wrest -> Just (entire, 0)
-
+          examine (diff,entire) =
+            case diff of
+              S [P [I n]] -> Just (entire, n)
               _ -> Nothing
           interesting = mapMaybe examine exploded
       -- convert the first suitable evidence
