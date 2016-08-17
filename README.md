@@ -1,6 +1,6 @@
 # ghc-typelits-knownnat
 
-[![Build Status](https://secure.travis-ci.org/clash-lang/ghc-typelits-knownnat.png?branch=master)](http://travis-ci.org/clash-lang/ghc-typelits-knownnat)
+[![Build Status](https://secure.travis-ci.org/clash-lang/ghc-typelits-knownnat.svg?branch=master)](http://travis-ci.org/clash-lang/ghc-typelits-knownnat)
 [![Hackage](https://img.shields.io/hackage/v/ghc-typelits-knownnat.svg)](https://hackage.haskell.org/package/ghc-typelits-knownnat)
 [![Hackage Dependencies](https://img.shields.io/hackage-deps/v/ghc-typelits-knownnat.svg?style=flat)](http://packdeps.haskellers.com/feed?needle=exact%3Aghc-typelits-knownnat)
 
