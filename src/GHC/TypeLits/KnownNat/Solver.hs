@@ -115,8 +115,9 @@ import Plugins    (Plugin (..), defaultPlugin)
 import PrelNames  (knownNatClassName)
 import TcEvidence (EvTerm (..), mkEvCast, mkTcSymCo, mkTcTransCo)
 import TcPluginM  (TcPluginM, tcLookupClass, getInstEnvs, zonkCt)
-import TcRnTypes  (Ct, TcPlugin(..), TcPluginResult (..), ctEvidence, ctEvPred,
-                   ctEvTerm, ctLoc, isWanted, mkNonCanonical)
+import TcRnTypes  (Ct, TcPlugin(..), TcPluginResult (..), ctEvidence, ctEvLoc,
+                   ctEvPred, ctEvTerm, ctLoc, ctLocSpan, isWanted,
+                   mkNonCanonical, setCtLoc, setCtLocSpan)
 import TcTypeNats (typeNatAddTyCon, typeNatSubTyCon)
 import Type       (PredTree (ClassPred), PredType, classifyPredType, dropForAlls,
                    funResultTy, mkNumLitTy, mkStrLitTy, mkTyConApp, piResultTys,
@@ -330,9 +331,16 @@ constraintToEvTerm defs givens (ct,cls,op) = do
     go_arg ty = case lookup (CType ty) givens of
       Just ev -> return (ev,[])
       _ -> do
-        wanted <- newWanted (ctLoc ct) ty
-        let ev = ctEvTerm wanted
-        return (ev,[mkNonCanonical wanted])
+        -- Create a new wanted constraint
+        wantedCtEv <- newWanted (ctLoc ct) ty
+        let ev      = ctEvTerm wantedCtEv
+            wanted  = mkNonCanonical wantedCtEv
+        -- Set the source-location of the new wanted constraint to the source
+        -- location of the [W]anted constraint we are currently trying to solve
+        let ct_ls   = ctLocSpan (ctLoc ct)
+            ctl     = ctEvLoc  wantedCtEv
+            wanted' = setCtLoc wanted (setCtLocSpan ctl ct_ls)
+        return (ev,[wanted'])
 
     -- Fall through case: look up the normalised [W]anted constraint in the list
     -- of [G]iven constraints.
