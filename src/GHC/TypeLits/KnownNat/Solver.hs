@@ -51,13 +51,15 @@ And, given the type family @Max@:
 type family Max (a :: Nat) (b :: Nat) :: Nat where
   Max 0 b = b
   Max a b = If (a <=? b) b a
+
+$(genDefunSymbols [''Max]) -- creates the 'MaxSym0' symbol
 @
 
 and corresponding @KnownNat2@ instance:
 
 @
 instance (KnownNat a, KnownNat b) => KnownNat2 \"TestFunctions.Max\" a b where
-  type KnownNatF2 \"TestFunctions.Max\" = MaxSym2
+  type KnownNatF2 \"TestFunctions.Max\" = MaxSym0
   natSing2 = let x = natVal (Proxy @ a)
                  y = natVal (Proxy @ b)
                  z = max x y
@@ -184,13 +186,15 @@ And, given the type family @Max@:
 type family Max (a :: Nat) (b :: Nat) :: Nat where
   Max 0 b = b
   Max a b = If (a <=? b) b a
+
+$(genDefunSymbols [''Max]) -- creates the 'MaxSym0' symbol
 @
 
 and corresponding @KnownNat2@ instance:
 
 @
 instance (KnownNat a, KnownNat b) => KnownNat2 \"TestFunctions.Max\" a b where
-  type KnownNatF2 \"TestFunctions.Max\" = MaxSym2
+  type KnownNatF2 \"TestFunctions.Max\" = MaxSym0
   natSing2 = let x = natVal (Proxy @ a)
                  y = natVal (Proxy @ b)
                  z = max x y

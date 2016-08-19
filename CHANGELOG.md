@@ -1,5 +1,9 @@
 # Changelog for the [`ghc-typelits-knownnat`](http://hackage.haskell.org/package/ghc-typelits-knownnat) package
 
+## 0.2.1 *August 19th 2016*
+* Fixes bugs:
+  * Source location of derived wanted constraints is, erroneously, always set to line 1, column 1
+
 ## 0.2 *August 17th 2016*
 * New features:
   * Handle `GHC.TypeLits.-`
