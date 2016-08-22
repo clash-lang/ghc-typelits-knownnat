@@ -2,7 +2,7 @@
 
 ## 0.2.2
 * New features:
-  * Derive smaller constraints from larger constraints when they differ by a single variable, i.e. `KnonwNat (a + b), KnownNat b` implies `KnownNat a`.
+  * Derive smaller constraints from larger constraints when they differ by a single variable, i.e. `KnownNat (a + b), KnownNat b` implies `KnownNat a`.
 
 ## 0.2.1 *August 19th 2016*
 * Fixes bugs:
