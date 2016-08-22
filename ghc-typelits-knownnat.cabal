@@ -1,5 +1,5 @@
 name:                ghc-typelits-knownnat
-version:             0.2.1
+version:             0.2.2
 synopsis:            Derive KnownNat constraints from other KnownNat constraints
 description:
   A type checker plugin for GHC that can derive \"complex\" @KnownNat@

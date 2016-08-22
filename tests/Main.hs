@@ -97,6 +97,9 @@ test19 = subSNat
 test20 :: forall a . (KnownNat (3 * a - a)) => Proxy a -> Integer
 test20 _ = natVal (Proxy @ (2 * a))
 
+test21 :: forall m n . (KnownNat (m+n), KnownNat m) => Proxy (m+n) -> Proxy m -> Integer
+test21 _ _ = natVal (Proxy :: Proxy n)
+
 tests :: TestTree
 tests = testGroup "ghc-typelits-natnormalise"
   [ testGroup "Basic functionality"
@@ -162,6 +165,9 @@ tests = testGroup "ghc-typelits-natnormalise"
     , testCase "KnownNat (3 * a - a) => KnownNat (2 * a); @ a ~ 4" $
       show (test20 (Proxy @ 4)) @?=
       "8"
+    , testCase "KnownNat (a + b), KnownNat b => KnownNat a; @ (a+b) ~ 8, b ~ 6" $
+      show (test21 (Proxy @ 8) (Proxy @ 6)) @?=
+      "2"
     ],
     testGroup "Normalisation"
     [ testCase "KnownNat (m-n+n) ~ KnownNat m" $

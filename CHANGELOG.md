@@ -1,5 +1,9 @@
 # Changelog for the [`ghc-typelits-knownnat`](http://hackage.haskell.org/package/ghc-typelits-knownnat) package
 
+## 0.2.2
+* New features:
+  * Derive smaller constraints from larger constraints when they differ by a single variable, i.e. `KnonwNat (a + b), KnownNat b` implies `KnownNat a`.
+
 ## 0.2.1 *August 19th 2016*
 * Fixes bugs:
   * Source location of derived wanted constraints is, erroneously, always set to line 1, column 1

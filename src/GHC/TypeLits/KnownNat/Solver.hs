@@ -374,15 +374,17 @@ constraintToEvTerm defs givens (ct,cls,op) = do
           exploded = map (normaliseNat . subWant &&& id) knowns
           -- interesting cases for us are those where
           -- wanted and given only differ by a constant
-          examineDiff (S [P [I n]]) entire  = Just (entire,n)
+          examineDiff (S [P [I n]]) entire = Just (entire,I n)
+          examineDiff (S [P [V v]]) entire = Just (entire,V v)
           examineDiff _ _ = Nothing
           interesting = mapMaybe (uncurry examineDiff) exploded
       -- convert the first suitable evidence
       ((h,corr):_) <- pure interesting
       let x = case corr of
-                0 -> h
-                _ | corr < 0  -> mkTyConApp typeNatAddTyCon [h,mkNumLitTy (negate corr)]
-                  | otherwise -> mkTyConApp typeNatSubTyCon [h,mkNumLitTy corr]
+                I 0 -> h
+                I i | i < 0     -> mkTyConApp typeNatAddTyCon [h,mkNumLitTy (negate i)]
+                    | otherwise -> mkTyConApp typeNatSubTyCon [h,mkNumLitTy i]
+                _ -> mkTyConApp typeNatSubTyCon [h,reifySOP (S [P [corr]])]
       MaybeT (go x)
 
 {- |
