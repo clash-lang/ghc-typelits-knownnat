@@ -4,7 +4,7 @@ packages:
 - '.'
 - location:
     git: https://github.com/clash-lang/ghc-typelits-natnormalise.git
-    commit: 70d1b7e56e57e532e183a070134990a3348e756a
+    commit: f81d6841edd6baea23dbe0ff9a896571d0e72d09
   extra-dep: true
 
 

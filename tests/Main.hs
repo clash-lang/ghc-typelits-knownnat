@@ -100,6 +100,9 @@ test20 _ = natVal (Proxy @ (2 * a))
 test21 :: forall m n . (KnownNat (m+n), KnownNat m) => Proxy (m+n) -> Proxy m -> Integer
 test21 _ _ = natVal (Proxy :: Proxy n)
 
+test22 :: forall x y . (KnownNat x, KnownNat y) => Proxy x -> Proxy y -> Integer
+test22 _ _ = natVal (Proxy :: Proxy (y*x*y))
+
 tests :: TestTree
 tests = testGroup "ghc-typelits-natnormalise"
   [ testGroup "Basic functionality"
@@ -133,6 +136,9 @@ tests = testGroup "ghc-typelits-natnormalise"
     , testCase "KnownNat (7 - 5) ~ 2" $
       show (test9 (Proxy @ 7) (Proxy @ 5)) @?=
       "2"
+    , testCase "KnownNat (y*x*y), x=3 y=4 ~ 48" $
+      show (test22 (Proxy @3) (Proxy @4))@?=
+      "48"
     ],
     testGroup "Implications"
     [ testCase "KnownNat m => KnownNat (m*m); @ 5" $
