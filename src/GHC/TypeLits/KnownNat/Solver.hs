@@ -115,7 +115,7 @@ import Name       (nameModule_maybe, nameOccName)
 import OccName    (mkTcOcc, occNameString)
 import Plugins    (Plugin (..), defaultPlugin)
 import PrelNames  (knownNatClassName)
-import TcEvidence (EvTerm (..), mkEvCast, mkTcSymCo, mkTcTransCo)
+import TcEvidence (EvTerm (..), EvLit (EvNum), mkEvCast, mkTcSymCo, mkTcTransCo)
 import TcPluginM  (TcPluginM, tcLookupClass, getInstEnvs, zonkCt)
 import TcRnTypes  (Ct, TcPlugin(..), TcPluginResult (..), ctEvidence, ctEvLoc,
                    ctEvPred, ctEvTerm, ctLoc, ctLocSpan, isWanted,
@@ -125,7 +125,7 @@ import Type       (PredTree (ClassPred), PredType, classifyPredType, dropForAlls
                    funResultTy, mkNumLitTy, mkStrLitTy, mkTyConApp, piResultTys,
                    splitFunTys, splitTyConApp_maybe, tyConAppTyCon_maybe)
 import TyCon      (tyConName)
-import TyCoRep    (Type (..))
+import TyCoRep    (Type (..), TyLit (..))
 import Var        (DFunId)
 
 -- | Classes and instances from "GHC.TypeLits.KnownNat"
@@ -327,6 +327,14 @@ constraintToEvTerm defs givens (ct,cls,op) = do
                (evs,new) <- unzip <$> mapM go_arg df_args
                return ((,concat new) <$> makeOpDict df cls args' op evs)
              _ -> return ((,[]) <$> go_other ty)
+    go (LitTy (NumTyLit i))
+      -- Let GHC solve simple Literal constraints
+      | LitTy _ <- op
+      = return Nothing
+      -- This plugin only solves Literal KnownNat's that needed to be normalised
+      -- first
+      | otherwise
+      = return ((,[]) <$> makeLitDict cls op i)
     go _ = return Nothing
 
     -- Get EvTerm arguments for type-level operations. If they do not exist
@@ -474,3 +482,28 @@ makeKnCoercion knCls x z xEv
     -- SNat x ~ KnownNat x
   = Just . mkEvCast xEv $ (kn_co_dict_x `mkTcTransCo` kn_co_rep_x) `mkTcTransCo` mkTcSymCo (kn_co_dict_z `mkTcTransCo` kn_co_rep_z)
   | otherwise = Nothing
+
+-- | THIS CODE IS COPIED FROM:
+-- https://github.com/ghc/ghc/blob/8035d1a5dc7290e8d3d61446ee4861e0b460214e/compiler/typecheck/TcInteract.hs#L1973
+--
+-- makeLitDict adds a coercion that will convert the literal into a dictionary
+-- of the appropriate type.  See Note [KnownNat & KnownSymbol and EvLit]
+-- in TcEvidence.  The coercion happens in 2 steps:
+--
+--     Integer -> SNat n     -- representation of literal to singleton
+--     SNat n  -> KnownNat n -- singleton to dictionary
+makeLitDict :: Class -> Type -> Integer -> Maybe EvTerm
+makeLitDict clas ty i
+  | Just (_, co_dict) <- tcInstNewTyCon_maybe (classTyCon clas) [ty]
+    -- co_dict :: KnownNat n ~ SNat n
+  , [ meth ]   <- classMethods clas
+  , Just tcRep <- tyConAppTyCon_maybe -- SNat
+                    $ funResultTy     -- SNat n
+                    $ dropForAlls     -- KnownNat n => SNat n
+                    $ idType meth     -- forall n. KnownNat n => SNat n
+  , Just (_, co_rep) <- tcInstNewTyCon_maybe tcRep [ty]
+        -- SNat n ~ Integer
+  , let ev_tm = mkEvCast (EvLit (EvNum i)) (mkTcSymCo (mkTcTransCo co_dict co_rep))
+  = Just ev_tm
+  | otherwise
+  = Nothing

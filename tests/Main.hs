@@ -103,6 +103,9 @@ test21 _ _ = natVal (Proxy :: Proxy n)
 test22 :: forall x y . (KnownNat x, KnownNat y) => Proxy x -> Proxy y -> Integer
 test22 _ _ = natVal (Proxy :: Proxy (y*x*y))
 
+test23 :: SNat addrSize -> SNat ((addrSize + 1) - (addrSize - 1))
+test23 SNat = SNat
+
 tests :: TestTree
 tests = testGroup "ghc-typelits-natnormalise"
   [ testGroup "Basic functionality"
@@ -185,6 +188,9 @@ tests = testGroup "ghc-typelits-natnormalise"
     , testCase "SNat (a+b) - SNat b = SNat a" $
       show (test19 (SNat @ 16) (SNat @10)) @?=
       "6"
+    , testCase "SNat ((addrSize + 1) - (addrSize - 1)) = SNat 2" $
+      show (test23 (SNat @ 8)) @?=
+      "2"
     ]
   ]
 
