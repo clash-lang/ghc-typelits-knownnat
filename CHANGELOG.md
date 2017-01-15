@@ -1,6 +1,6 @@
 # Changelog for the [`ghc-typelits-knownnat`](http://hackage.haskell.org/package/ghc-typelits-knownnat) package
 
-## 0.2.3
+## 0.2.3 *January 15th 2017*
 * Solve normalised literal constraints, i.e.:
   * `KnownNat (((addrSize + 1) - (addrSize - 1))) ~ KnownNat 2`
 
