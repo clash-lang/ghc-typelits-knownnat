@@ -270,9 +270,11 @@ normaliseSOP = reifySOP . normaliseNat
 lookupKnownNatDefs :: TcPluginM KnownNatDefs
 lookupKnownNatDefs = do
     md     <- lookupModule myModule myPackage
+    kn1C   <- look md "KnownNat1"
     kn2C   <- look md "KnownNat2"
     kn3C   <- look md "KnownNat3"
-    return $ (\case { 2 -> Just kn2C
+    return $ (\case { 1 -> Just kn1C
+                    ; 2 -> Just kn2C
                     ; 3 -> Just kn3C
                     ; _ -> Nothing
                     })

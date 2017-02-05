@@ -11,9 +11,14 @@ import Data.Type.Equality ((:~:)(..))
 import GHC.TypeLits
 import Test.Tasty
 import Test.Tasty.HUnit
+import Test.Tasty.QuickCheck
 import Unsafe.Coerce (unsafeCoerce)
 
 import TestFunctions
+
+logT :: Integer -> Integer
+logT n = withNat n $ \(Proxy :: Proxy n) ->
+                           natVal (Proxy :: Proxy (Log n))
 
 test1 :: forall n . KnownNat n => Proxy n -> Integer
 test1 _ = natVal (Proxy :: Proxy n) + natVal (Proxy :: Proxy (n+2))
@@ -191,7 +196,9 @@ tests = testGroup "ghc-typelits-natnormalise"
     , testCase "SNat ((addrSize + 1) - (addrSize - 1)) = SNat 2" $
       show (test23 (SNat @ 8)) @?=
       "2"
-    ]
+    ],
+    testGroup "QuickCheck"
+    [ testProperty "logT = logInt" $ (\a -> (a > 0) ==> (logT a == logInt a)) ]
   ]
 
 main :: IO ()
