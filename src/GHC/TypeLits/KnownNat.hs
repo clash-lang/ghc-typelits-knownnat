@@ -106,6 +106,7 @@ module GHC.TypeLits.KnownNat
   ( -- * Singleton natural number
     SNatKn (..)
     -- * Constraint-level arithmetic classes
+  , KnownNat1 (..)
   , KnownNat2 (..)
   , KnownNat3 (..)
     -- * Template Haskell helper
@@ -124,6 +125,15 @@ import GHC.TypeLits.KnownNat.TH
 
 -- | Singleton natural number (represented by an integer)
 newtype SNatKn (n :: Nat) = SNatKn Integer
+
+-- | Class for arithmetic functions with /one/ argument.
+--
+-- The 'Symbol' /f/ must correspond to the fully qualified name of the
+-- type-level operation. Use 'nameToSymbol' to get the fully qualified
+-- TH Name as a 'Symbol'
+class KnownNat1 (f :: Symbol) (a :: Nat) where
+  type KnownNatF1 f :: Nat ~> Nat
+  natSing1 :: SNatKn (KnownNatF1 f @@ a)
 
 -- | Class for arithmetic functions with /two/ arguments.
 --

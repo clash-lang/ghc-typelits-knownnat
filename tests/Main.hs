@@ -11,9 +11,46 @@ import Data.Type.Equality ((:~:)(..))
 import GHC.TypeLits
 import Test.Tasty
 import Test.Tasty.HUnit
+import Test.Tasty.QuickCheck
 import Unsafe.Coerce (unsafeCoerce)
 
 import TestFunctions
+
+addT :: Integer -> Integer -> Integer
+addT a b = withNat a $
+           \(Proxy :: Proxy a) ->
+             withNat b $
+             \(Proxy :: Proxy b) ->
+               natVal (Proxy :: Proxy (a + b))
+
+subT :: Integer -> Integer -> Integer
+subT a b
+  | a >= b = withNat a $
+             \(Proxy :: Proxy a) ->
+               withNat b $
+               \(Proxy :: Proxy b) ->
+                 case unsafeCoerce Refl of
+                   (Refl :: (b <=? a) :~: True) ->
+                     natVal (Proxy :: Proxy (a - b))
+  | otherwise = error "a - b < 0"
+
+mulT :: Integer -> Integer -> Integer
+mulT a b = withNat a $
+           \(Proxy :: Proxy a) ->
+             withNat b $
+             \(Proxy :: Proxy b) ->
+               natVal (Proxy :: Proxy (a * b))
+
+maxT :: Integer -> Integer -> Integer
+maxT a b = withNat a $
+           \(Proxy :: Proxy a) ->
+             withNat b $
+             \(Proxy :: Proxy b) ->
+               natVal (Proxy :: Proxy (Max a b))
+
+logT :: Integer -> Integer
+logT n = withNat n $ \(Proxy :: Proxy n) ->
+                           natVal (Proxy :: Proxy (Log n))
 
 test1 :: forall n . KnownNat n => Proxy n -> Integer
 test1 _ = natVal (Proxy :: Proxy n) + natVal (Proxy :: Proxy (n+2))
@@ -191,6 +228,13 @@ tests = testGroup "ghc-typelits-natnormalise"
     , testCase "SNat ((addrSize + 1) - (addrSize - 1)) = SNat 2" $
       show (test23 (SNat @ 8)) @?=
       "2"
+    ],
+    testGroup "QuickCheck"
+    [ testProperty "addT = (+)" $ (\a b -> (a >= 0 && b >= 0) ==> (addT a b === a + b)),
+      testProperty "subT = (-)" $ (\a b -> (a >= b && b >= 0) ==> (subT a b === a - b)),
+      testProperty "mulT = (*)" $ (\a b -> (a >= 0 && b >= 0) ==> (mulT a b === a * b)),
+      testProperty "maxT = max" $ (\a b -> (a >= 0 && b >= 0) ==> (maxT a b === max a b)),
+      testProperty "logT = logInt" $ (\a -> (a > 0) ==> (logT a == logInt a))
     ]
   ]
 

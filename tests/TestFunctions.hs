@@ -1,5 +1,5 @@
 {-# LANGUAGE DataKinds, FlexibleInstances, GADTs, KindSignatures,
-             MultiParamTypeClasses, ScopedTypeVariables, TemplateHaskell,
+             MultiParamTypeClasses, RankNTypes, ScopedTypeVariables, TemplateHaskell,
              TypeApplications, TypeFamilies, TypeOperators,
              UndecidableInstances #-}
 
@@ -36,3 +36,28 @@ up the corresponding instance of the KnownNat2 class.
 type family Min (a :: Nat) (b :: Nat) :: Nat where
   Min 0 b = 0 -- See [Note: single equation TFs are treated like synonyms]
   Min a b = If (a <=? b) a b
+
+-- Unary functions.
+
+withNat :: Integer -> (forall n. (KnownNat n) => Proxy n -> r) -> r
+withNat n f = case someNatVal n of
+               Just (SomeNat proxy) -> f proxy
+               Nothing              -> error ("withNat: negative value (" ++ show n ++ ")")
+
+type family Log (n :: Nat) :: Nat where
+
+genDefunSymbols [''Log]
+
+logInt :: Integer -> Integer
+logInt 0 = error "log 0"
+logInt n = go 0
+  where
+    go k = case compare (2^k) n of
+             LT -> go (k + 1)
+             EQ -> k
+             GT -> k - 1
+
+instance (KnownNat a) => KnownNat1 $(nameToSymbol ''Log) a where
+  type KnownNatF1 $(nameToSymbol ''Log) = LogSym0
+  natSing1 = let x = natVal (Proxy @ a)
+             in SNatKn (logInt x)
