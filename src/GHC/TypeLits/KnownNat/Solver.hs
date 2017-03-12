@@ -121,9 +121,10 @@ import TcRnTypes  (Ct, TcPlugin(..), TcPluginResult (..), ctEvidence, ctEvLoc,
                    ctEvPred, ctEvTerm, ctLoc, ctLocSpan, isWanted,
                    mkNonCanonical, setCtLoc, setCtLocSpan)
 import TcTypeNats (typeNatAddTyCon, typeNatSubTyCon)
-import Type       (PredTree (ClassPred), PredType, classifyPredType, dropForAlls,
-                   funResultTy, mkNumLitTy, mkStrLitTy, mkTyConApp, piResultTys,
-                   splitFunTys, splitTyConApp_maybe, tyConAppTyCon_maybe)
+import Type
+  (EqRel (NomEq), PredTree (ClassPred,EqPred), PredType, classifyPredType,
+   dropForAlls, funResultTy, mkNumLitTy, mkStrLitTy, mkTyConApp, piResultTys,
+   splitFunTys, splitTyConApp_maybe, tyConAppTyCon_maybe)
 import TyCon      (tyConName)
 import TyCoRep    (Type (..), TyLit (..))
 import Var        (DFunId)
@@ -371,17 +372,29 @@ constraintToEvTerm defs givens (ct,cls,op) = do
     -- the two are a constant offset apart.
     offset :: Type -> TcPluginM (Maybe (EvTerm,[Ct]))
     offset want = runMaybeT $ do
-      let unKn ty' = case classifyPredType ty' of
+      let -- Get the knownnat contraints
+          unKn ty' = case classifyPredType ty' of
                        ClassPred cls' [ty'']
                          | className cls' == knownNatClassName
                          -> Just ty''
                        _ -> Nothing
+          -- Get the rewrites
+          unEq ty' = case classifyPredType ty' of
+                       EqPred NomEq ty1 ty2 -> Just (ty1,ty2)
+                       _ -> Nothing
+          rewrites = mapMaybe (unEq . unCType . fst) givens
+          -- Rewrite
+          rewriteTy tyK (ty1,ty2) | CType ty1 == CType tyK = Just ty2
+                                  | CType ty2 == CType tyK = Just ty1
+                                  | otherwise              = Nothing
           -- Get only the [G]iven KnownNat constraints
           knowns   = mapMaybe (unKn . unCType . fst) givens
+          -- Get all the rewritten KNs
+          knownsR  = catMaybes $ concatMap (\t -> map (rewriteTy t) rewrites) knowns
           -- pair up the sum-of-products KnownNat constraints
           -- with the original Nat operation
           subWant  = mkTyConApp typeNatSubTyCon . (:[want])
-          exploded = map (normaliseNat . subWant &&& id) knowns
+          exploded = map (normaliseNat . subWant &&& id) (knowns ++ knownsR)
           -- interesting cases for us are those where
           -- wanted and given only differ by a constant
           examineDiff (S [P [I n]]) entire = Just (entire,I n)
