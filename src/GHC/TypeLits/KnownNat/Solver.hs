@@ -123,8 +123,8 @@ import TcRnTypes  (Ct, TcPlugin(..), TcPluginResult (..), ctEvidence, ctEvLoc,
 import TcTypeNats (typeNatAddTyCon, typeNatSubTyCon)
 import Type
   (EqRel (NomEq), PredTree (ClassPred,EqPred), PredType, classifyPredType,
-   dropForAlls, funResultTy, mkNumLitTy, mkStrLitTy, mkTyConApp, piResultTys,
-   splitFunTys, splitTyConApp_maybe, tyConAppTyCon_maybe)
+   dropForAlls, eqType, funResultTy, mkNumLitTy, mkStrLitTy, mkTyConApp,
+   piResultTys, splitFunTys, splitTyConApp_maybe, tyConAppTyCon_maybe)
 import TyCon      (tyConName)
 import TyCoRep    (Type (..), TyLit (..))
 import Var        (DFunId)
@@ -384,9 +384,9 @@ constraintToEvTerm defs givens (ct,cls,op) = do
                        _ -> Nothing
           rewrites = mapMaybe (unEq . unCType . fst) givens
           -- Rewrite
-          rewriteTy tyK (ty1,ty2) | CType ty1 == CType tyK = Just ty2
-                                  | CType ty2 == CType tyK = Just ty1
-                                  | otherwise              = Nothing
+          rewriteTy tyK (ty1,ty2) | ty1 `eqType` tyK = Just ty2
+                                  | ty2 `eqType` tyK = Just ty1
+                                  | otherwise        = Nothing
           -- Get only the [G]iven KnownNat constraints
           knowns   = mapMaybe (unKn . unCType . fst) givens
           -- Get all the rewritten KNs
