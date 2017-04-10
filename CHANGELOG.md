@@ -1,8 +1,9 @@
 # Changelog for the [`ghc-typelits-knownnat`](http://hackage.haskell.org/package/ghc-typelits-knownnat) package
 
-## 0.2.4
+## 0.2.4 *April 10th 2017*
 * New features:
-  * Derive constraints for unary functions via a `KnownNat1` instance.
+  * Derive constraints for unary functions via a `KnownNat1` instance; thanks to @nshepperd [#11](https://github.com/clash-lang/ghc-typelits-knownnat/pull/11)
+  * Use type-substituted [G]iven KnownNats (partial solve for [#13](https://github.com/clash-lang/ghc-typelits-knownnat/issues/13))
 
 ## 0.2.3 *January 15th 2017*
 * Solve normalised literal constraints, i.e.:
