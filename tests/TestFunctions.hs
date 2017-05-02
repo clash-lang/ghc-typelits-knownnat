@@ -9,7 +9,7 @@ import Data.Proxy            (Proxy (..))
 import Data.Singletons.TH    (genDefunSymbols)
 import Data.Type.Bool        (If)
 import GHC.TypeLits.KnownNat
-#if MIN_VERSION_ghc_typelits_knownnat(0,3,0)
+#if __GLASGOW_HASKELL__ >= 802
 import GHC.TypeNats
 import Numeric.Natural
 #else
@@ -43,7 +43,7 @@ type family Min (a :: Nat) (b :: Nat) :: Nat where
   Min a b = If (a <=? b) a b
 
 -- Unary functions.
-#if MIN_VERSION_ghc_typelits_knownnat(0,3,0)
+#if __GLASGOW_HASKELL__ >= 802
 withNat :: Natural -> (forall n. (KnownNat n) => Proxy n -> r) -> r
 withNat n f = case someNatVal n of
   SomeNat proxy -> f proxy

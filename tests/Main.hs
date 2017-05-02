@@ -8,7 +8,7 @@ module Main where
 
 import Data.Proxy
 import Data.Type.Equality ((:~:)(..))
-#if MIN_VERSION_ghc_typelits_knownnat(0,3,0)
+#if __GLASGOW_HASKELL__ >= 802
 import GHC.TypeNats
 import Numeric.Natural
 #else
@@ -21,7 +21,7 @@ import Unsafe.Coerce (unsafeCoerce)
 
 import TestFunctions
 
-#if MIN_VERSION_ghc_typelits_knownnat(0,3,0)
+#if __GLASGOW_HASKELL__ >= 802
 type Number = Natural
 #else
 type Number = Integer
