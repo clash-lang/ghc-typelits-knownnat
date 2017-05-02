@@ -1,4 +1,4 @@
-{-# LANGUAGE DataKinds, FlexibleInstances, GADTs, KindSignatures,
+{-# LANGUAGE CPP, DataKinds, FlexibleInstances, GADTs, KindSignatures,
              MultiParamTypeClasses, RankNTypes, ScopedTypeVariables, TemplateHaskell,
              TypeApplications, TypeFamilies, TypeOperators,
              UndecidableInstances #-}
@@ -9,7 +9,12 @@ import Data.Proxy            (Proxy (..))
 import Data.Singletons.TH    (genDefunSymbols)
 import Data.Type.Bool        (If)
 import GHC.TypeLits.KnownNat
+#if MIN_VERSION_ghc_typelits_knownnat(0,3,0)
+import GHC.TypeNats
+import Numeric.Natural
+#else
 import GHC.TypeLits
+#endif
 
 type family Max (a :: Nat) (b :: Nat) :: Nat where
   Max 0 b = b -- See [Note: single equation TFs are treated like synonyms]
@@ -38,17 +43,22 @@ type family Min (a :: Nat) (b :: Nat) :: Nat where
   Min a b = If (a <=? b) a b
 
 -- Unary functions.
-
+#if MIN_VERSION_ghc_typelits_knownnat(0,3,0)
+withNat :: Natural -> (forall n. (KnownNat n) => Proxy n -> r) -> r
+withNat n f = case someNatVal n of
+  SomeNat proxy -> f proxy
+#else
 withNat :: Integer -> (forall n. (KnownNat n) => Proxy n -> r) -> r
 withNat n f = case someNatVal n of
                Just (SomeNat proxy) -> f proxy
                Nothing              -> error ("withNat: negative value (" ++ show n ++ ")")
+#endif
 
 type family Log (n :: Nat) :: Nat where
 
 genDefunSymbols [''Log]
 
-logInt :: Integer -> Integer
+logInt :: Natural -> Natural
 logInt 0 = error "log 0"
 logInt n = go 0
   where

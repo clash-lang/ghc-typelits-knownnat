@@ -85,6 +85,7 @@ type family Max (a :: Nat) (b :: Nat) :: Nat where
 -}
 
 {-# LANGUAGE AllowAmbiguousTypes   #-}
+{-# LANGUAGE CPP                   #-}
 {-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE KindSignatures        #-}
@@ -116,15 +117,29 @@ where
 
 import Data.Bits              (shiftL)
 import Data.Proxy             (Proxy (..))
+#if MIN_VERSION_ghc(8,2,0)
+import GHC.TypeNats
+  (KnownNat, Nat, type (+), type (*), type (^), type (-), type (<=), natVal)
+import GHC.TypeLits           (Symbol)
+#else
 import GHC.TypeLits           (KnownNat, Nat, Symbol, type (+), type (*),
                                type (^), type (-), type (<=), natVal)
+#endif
 import Data.Singletons        (type (~>), type (@@))
 import Data.Promotion.Prelude (type (:+$), type (:*$), type (:^$), type (:-$))
+#if MIN_VERSION_ghc(8,2,0)
+import Numeric.Natural        (Natural)
+#endif
 
 import GHC.TypeLits.KnownNat.TH
 
--- | Singleton natural number (represented by an integer)
-newtype SNatKn (n :: Nat) = SNatKn Integer
+-- | Singleton natural number
+newtype SNatKn (n :: Nat) =
+#if MIN_VERSION_ghc(8,2,0)
+  SNatKn Natural
+#else
+  SNatKn Integer
+#endif
 
 -- | Class for arithmetic functions with /one/ argument.
 --
@@ -171,7 +186,7 @@ instance (KnownNat a, KnownNat b) => KnownNat2 $(nameToSymbol ''(^)) a b where
   natSing2 = let x = natVal (Proxy @ a)
                  y = natVal (Proxy @ b)
                  z = case x of
-                       2 -> shiftL 1 (fromInteger y)
+                       2 -> shiftL 1 (fromIntegral y)
                        _ -> x ^ y
              in  SNatKn z
   {-# INLINE natSing2 #-}

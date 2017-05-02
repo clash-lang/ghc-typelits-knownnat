@@ -1,5 +1,8 @@
 # Changelog for the [`ghc-typelits-knownnat`](http://hackage.haskell.org/package/ghc-typelits-knownnat) package
 
+## 0.3
+* GHC 8.2.1 support: Underlying representation for `KnownNat` in GHC 8.2 is `Natural`, meaning users of this plugin will need to update their code to use `Natural` for GHC 8.2 as well.
+
 ## 0.2.4 *April 10th 2017*
 * New features:
   * Derive constraints for unary functions via a `KnownNat1` instance; thanks to @nshepperd [#11](https://github.com/clash-lang/ghc-typelits-knownnat/pull/11)

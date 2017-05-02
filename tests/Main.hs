@@ -1,4 +1,4 @@
-{-# LANGUAGE DataKinds, GADTs, KindSignatures, ScopedTypeVariables, TypeOperators,
+{-# LANGUAGE CPP, DataKinds, GADTs, KindSignatures, ScopedTypeVariables, TypeOperators,
              TypeApplications, TypeFamilies, TypeFamilyDependencies, FlexibleContexts #-}
 
 {-# OPTIONS_GHC -fplugin GHC.TypeLits.Normalise       #-}
@@ -8,7 +8,12 @@ module Main where
 
 import Data.Proxy
 import Data.Type.Equality ((:~:)(..))
+#if MIN_VERSION_ghc_typelits_knownnat(0,3,0)
+import GHC.TypeNats
+import Numeric.Natural
+#else
 import GHC.TypeLits
+#endif
 import Test.Tasty
 import Test.Tasty.HUnit
 import Test.Tasty.QuickCheck
@@ -16,14 +21,20 @@ import Unsafe.Coerce (unsafeCoerce)
 
 import TestFunctions
 
-addT :: Integer -> Integer -> Integer
+#if MIN_VERSION_ghc_typelits_knownnat(0,3,0)
+type Number = Natural
+#else
+type Number = Integer
+#endif
+
+addT :: Number -> Number -> Number
 addT a b = withNat a $
            \(Proxy :: Proxy a) ->
              withNat b $
              \(Proxy :: Proxy b) ->
                natVal (Proxy :: Proxy (a + b))
 
-subT :: Integer -> Integer -> Integer
+subT :: Number -> Number -> Number
 subT a b
   | a >= b = withNat a $
              \(Proxy :: Proxy a) ->
@@ -34,77 +45,77 @@ subT a b
                      natVal (Proxy :: Proxy (a - b))
   | otherwise = error "a - b < 0"
 
-mulT :: Integer -> Integer -> Integer
+mulT :: Number -> Number -> Number
 mulT a b = withNat a $
            \(Proxy :: Proxy a) ->
              withNat b $
              \(Proxy :: Proxy b) ->
                natVal (Proxy :: Proxy (a * b))
 
-maxT :: Integer -> Integer -> Integer
+maxT :: Number -> Number -> Number
 maxT a b = withNat a $
            \(Proxy :: Proxy a) ->
              withNat b $
              \(Proxy :: Proxy b) ->
                natVal (Proxy :: Proxy (Max a b))
 
-logT :: Integer -> Integer
+logT :: Number -> Number
 logT n = withNat n $ \(Proxy :: Proxy n) ->
                            natVal (Proxy :: Proxy (Log n))
 
-test1 :: forall n . KnownNat n => Proxy n -> Integer
+test1 :: forall n . KnownNat n => Proxy n -> Number
 test1 _ = natVal (Proxy :: Proxy n) + natVal (Proxy :: Proxy (n+2))
 
-test2 :: forall n . KnownNat n => Proxy n -> Integer
+test2 :: forall n . KnownNat n => Proxy n -> Number
 test2 _ = natVal (Proxy :: Proxy (n*3))
 
-test3 :: forall n m . (KnownNat n, KnownNat m) => Proxy n -> Proxy m -> Integer
+test3 :: forall n m . (KnownNat n, KnownNat m) => Proxy n -> Proxy m -> Number
 test3 _ _ = natVal (Proxy :: Proxy (n+m))
 
-test4 :: forall n m . (KnownNat n, KnownNat m) => Proxy n -> Proxy m -> Integer
+test4 :: forall n m . (KnownNat n, KnownNat m) => Proxy n -> Proxy m -> Number
 test4 _ _ = natVal (Proxy :: Proxy (n*m))
 
-test5 :: forall n m . (KnownNat n, KnownNat m) => Proxy n -> Proxy m -> Integer
+test5 :: forall n m . (KnownNat n, KnownNat m) => Proxy n -> Proxy m -> Number
 test5 _ _ = natVal (Proxy :: Proxy (n^m))
 
-test6 :: forall n m . (KnownNat n, KnownNat m) => Proxy n -> Proxy m -> Integer
+test6 :: forall n m . (KnownNat n, KnownNat m) => Proxy n -> Proxy m -> Number
 test6 _ _ = natVal (Proxy :: Proxy ((n^m)+(n*m)))
 
-test7 :: forall n m . (KnownNat m, KnownNat n) => Proxy n -> Proxy m -> Integer
+test7 :: forall n m . (KnownNat m, KnownNat n) => Proxy n -> Proxy m -> Number
 test7 _ _ = natVal (Proxy :: Proxy (Max n m + 1))
 
-test8 :: forall n m . (KnownNat (Min n m)) => Proxy n -> Proxy m -> Integer
+test8 :: forall n m . (KnownNat (Min n m)) => Proxy n -> Proxy m -> Number
 test8 _ _ = natVal (Proxy :: Proxy (Min n m + 1))
 
-test9 :: forall n m . (KnownNat m, KnownNat n, n <= m) => Proxy m -> Proxy n -> Integer
+test9 :: forall n m . (KnownNat m, KnownNat n, n <= m) => Proxy m -> Proxy n -> Number
 test9 _ _ = natVal (Proxy :: Proxy (m-n))
 
-test10 :: forall (n :: Nat) m . (KnownNat m) => Proxy m -> Proxy n -> Integer
+test10 :: forall (n :: Nat) m . (KnownNat m) => Proxy m -> Proxy n -> Number
 test10 _ _ = natVal (Proxy :: Proxy (m-n+n))
 
-test11 :: forall m . (KnownNat m) => Proxy m -> Integer
+test11 :: forall m . (KnownNat m) => Proxy m -> Number
 test11 _ = natVal (Proxy @ (m*m))
 
-test12 :: forall m . (KnownNat (m+1)) => Proxy m -> Integer
+test12 :: forall m . (KnownNat (m+1)) => Proxy m -> Number
 test12 = natVal
 
-test13 :: forall m . (KnownNat (m+3)) => Proxy m -> Integer
+test13 :: forall m . (KnownNat (m+3)) => Proxy m -> Number
 test13 = natVal
 
-test14 :: forall m . (KnownNat (4+m)) => Proxy (7+m) -> Integer
+test14 :: forall m . (KnownNat (4+m)) => Proxy (7+m) -> Number
 test14 = natVal
 
 type family Foo (m :: Nat) = (result :: Nat) | result -> m
 fakeFooEvidence :: 1 :~: Foo 1
 fakeFooEvidence = unsafeCoerce Refl
 
-test15 :: KnownNat (4 + Foo 1) => Proxy (Foo 1) -> Proxy (4 + Foo 1) -> Integer
+test15 :: KnownNat (4 + Foo 1) => Proxy (Foo 1) -> Proxy (4 + Foo 1) -> Number
 test15 _ _ = natVal (Proxy @ (Foo 1 + 7))
 
-test16 :: KnownNat (4 + Foo 1 + Foo 1) => Proxy (Foo 1) -> Proxy (4 + Foo 1 + Foo 1) -> Integer
+test16 :: KnownNat (4 + Foo 1 + Foo 1) => Proxy (Foo 1) -> Proxy (4 + Foo 1 + Foo 1) -> Number
 test16 _ _ = natVal (Proxy @ (Foo 1 + 7 + Foo 1))
 
-test17 :: KnownNat (4 + 2 * Foo 1 + Foo 1) => Proxy (Foo 1) -> Proxy (4 + 2 * Foo 1 + Foo 1) -> Integer
+test17 :: KnownNat (4 + 2 * Foo 1 + Foo 1) => Proxy (Foo 1) -> Proxy (4 + 2 * Foo 1 + Foo 1) -> Number
 test17 _ _ = natVal (Proxy @ (2 * Foo 1 + 7 + Foo 1))
 
 data SNat :: Nat -> * where
@@ -131,19 +142,19 @@ test18 = subSNat
 test19 :: SNat (a+b) -> SNat b -> SNat a
 test19 = subSNat
 
-test20 :: forall a . (KnownNat (3 * a - a)) => Proxy a -> Integer
+test20 :: forall a . (KnownNat (3 * a - a)) => Proxy a -> Number
 test20 _ = natVal (Proxy @ (2 * a))
 
-test21 :: forall m n . (KnownNat (m+n), KnownNat m) => Proxy (m+n) -> Proxy m -> Integer
+test21 :: forall m n . (KnownNat (m+n), KnownNat m) => Proxy (m+n) -> Proxy m -> Number
 test21 _ _ = natVal (Proxy :: Proxy n)
 
-test22 :: forall x y . (KnownNat x, KnownNat y) => Proxy x -> Proxy y -> Integer
+test22 :: forall x y . (KnownNat x, KnownNat y) => Proxy x -> Proxy y -> Number
 test22 _ _ = natVal (Proxy :: Proxy (y*x*y))
 
 test23 :: SNat addrSize -> SNat ((addrSize + 1) - (addrSize - 1))
 test23 SNat = SNat
 
-test24 :: (KnownNat n, n ~ (m+1)) => proxy m -> Integer
+test24 :: (KnownNat n, n ~ (m+1)) => proxy m -> Number
 test24 = natVal
 
 tests :: TestTree
