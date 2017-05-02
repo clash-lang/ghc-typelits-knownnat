@@ -58,7 +58,11 @@ type family Log (n :: Nat) :: Nat where
 
 genDefunSymbols [''Log]
 
+#if __GLASGOW_HASKELL__ >= 802
 logInt :: Natural -> Natural
+#else
+logInt :: Integer -> Integer
+#endif
 logInt 0 = error "log 0"
 logInt n = go 0
   where
