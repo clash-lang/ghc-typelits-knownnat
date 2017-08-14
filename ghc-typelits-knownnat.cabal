@@ -85,7 +85,7 @@ library
                        ghc                       >= 8.0.1    && <8.4,
                        ghc-tcplugins-extra       >= 0.2,
                        ghc-typelits-natnormalise >= 0.5.2    && <0.6,
-                       singletons                >= 2.2      && <3.0,
+                       singletons                >= 2.2      && <2.4,
                        transformers              >= 0.5.2.0  && <0.6,
                        template-haskell          >= 2.11.0.0 && <2.13
   hs-source-dirs:      src
@@ -102,7 +102,7 @@ test-suite test-ghc-typelits-knownnat
   build-depends:       base                      >= 4.8   && <5,
                        ghc-typelits-knownnat     >= 0.1,
                        ghc-typelits-natnormalise >= 0.5   && <0.6,
-                       singletons                >= 2.2   && <3.0,
+                       singletons                >= 2.2   && <2.4,
                        tasty                     >= 0.10,
                        tasty-hunit               >= 0.9,
                        tasty-quickcheck          >= 0.8
