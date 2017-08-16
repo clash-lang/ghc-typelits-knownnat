@@ -3,6 +3,9 @@
 
 {-# OPTIONS_GHC -fplugin GHC.TypeLits.Normalise       #-}
 {-# OPTIONS_GHC -fplugin GHC.TypeLits.KnownNat.Solver #-}
+#if __GLASGOW_HASKELL__ >= 802
+{-# OPTIONS_GHC -fno-warn-orphans #-}
+#endif
 
 module Main where
 
@@ -20,6 +23,11 @@ import Test.Tasty.QuickCheck
 import Unsafe.Coerce (unsafeCoerce)
 
 import TestFunctions
+
+#if __GLASGOW_HASKELL__ >= 802
+instance Arbitrary Natural where
+  arbitrary = fromInteger . abs <$> arbitrary
+#endif
 
 #if __GLASGOW_HASKELL__ >= 802
 type Number = Natural
