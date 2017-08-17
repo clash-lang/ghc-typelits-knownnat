@@ -1,5 +1,8 @@
 # Changelog for the [`ghc-typelits-knownnat`](http://hackage.haskell.org/package/ghc-typelits-knownnat) package
 
+## 0.3.1 *August 17th 2017*
+* Fix testsuite for GHC 8.2.1
+
 ## 0.3 *May 15th 2017*
 * GHC 8.2.1 support: Underlying representation for `KnownNat` in GHC 8.2 is `Natural`, meaning users of this plugin will need to update their code to use `Natural` for GHC 8.2 as well.
 
