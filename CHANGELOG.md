@@ -1,5 +1,9 @@
 # Changelog for the [`ghc-typelits-knownnat`](http://hackage.haskell.org/package/ghc-typelits-knownnat) package
 
+## 0.4
+* Drop `singletons` dependency [#15](https://github.com/clash-lang/ghc-typelits-knownnat/issues/15)
+  * `KnownNatN` classes no longer have the `KnownNatFN` associated type family
+
 ## 0.3.1 *August 17th 2017*
 * Fix testsuite for GHC 8.2.1
 

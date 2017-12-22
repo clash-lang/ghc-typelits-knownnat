@@ -6,7 +6,6 @@
 module TestFunctions where
 
 import Data.Proxy            (Proxy (..))
-import Data.Singletons.TH    (genDefunSymbols)
 import Data.Type.Bool        (If)
 import GHC.TypeLits.KnownNat
 #if __GLASGOW_HASKELL__ >= 802
@@ -20,10 +19,7 @@ type family Max (a :: Nat) (b :: Nat) :: Nat where
   Max 0 b = b -- See [Note: single equation TFs are treated like synonyms]
   Max a b = If (a <=? b) b a
 
-genDefunSymbols [''Max]
-
 instance (KnownNat a, KnownNat b) => KnownNat2 $(nameToSymbol ''Max) a b where
-  type KnownNatF2 $(nameToSymbol ''Max) = MaxSym0
   natSing2 = let x = natVal (Proxy @ a)
                  y = natVal (Proxy @ b)
                  z = max x y
@@ -56,8 +52,6 @@ withNat n f = case someNatVal n of
 
 type family Log (n :: Nat) :: Nat where
 
-genDefunSymbols [''Log]
-
 #if __GLASGOW_HASKELL__ >= 802
 logInt :: Natural -> Natural
 #else
@@ -72,6 +66,5 @@ logInt n = go 0
              GT -> k - 1
 
 instance (KnownNat a) => KnownNat1 $(nameToSymbol ''Log) a where
-  type KnownNatF1 $(nameToSymbol ''Log) = LogSym0
   natSing1 = let x = natVal (Proxy @ a)
              in SNatKn (logInt x)

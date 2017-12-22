@@ -30,13 +30,9 @@ of @Max@, then you must define:
              UndecidableInstances \#-\}
 
 import Data.Proxy            (Proxy (..))
-import Data.Singletons.TH    (genDefunSymbols)
 import GHC.TypeLits.KnownNat
 
-$(genDefunSymbols [''Max]) -- creates the \'MaxSym0\' symbol
-
 instance (KnownNat a, KnownNat b) => 'KnownNat2' $('nameToSymbol' ''Max) a b where
-  type 'KnownNatF2' $('nameToSymbol' ''Max) = MaxSym0
   natSing2 = let x = natVal (Proxy @a)
                  y = natVal (Proxy @b)
                  z = max x y
@@ -95,8 +91,6 @@ type family Max (a :: Nat) (b :: Nat) :: Nat where
 {-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeOperators         #-}
 {-# LANGUAGE TypeFamilies          #-}
-{-# LANGUAGE TypeInType            #-}
-{-# LANGUAGE UndecidableInstances  #-}
 
 {-# LANGUAGE Trustworthy #-}
 
@@ -121,20 +115,16 @@ import Data.Proxy             (Proxy (..))
 import GHC.TypeNats
   (KnownNat, Nat, type (+), type (*), type (^), type (-), type (<=), natVal)
 import GHC.TypeLits           (Symbol)
+import Numeric.Natural        (Natural)
 #else
 import GHC.TypeLits           (KnownNat, Nat, Symbol, type (+), type (*),
                                type (^), type (-), type (<=), natVal)
-#endif
-import Data.Singletons        (type (~>), type (@@))
-import Data.Promotion.Prelude (type (:+$), type (:*$), type (:^$), type (:-$))
-#if MIN_VERSION_ghc(8,2,0)
-import Numeric.Natural        (Natural)
 #endif
 
 import GHC.TypeLits.KnownNat.TH
 
 -- | Singleton natural number
-newtype SNatKn (n :: Nat) =
+newtype SNatKn (f :: Symbol) =
 #if MIN_VERSION_ghc(8,2,0)
   SNatKn Natural
 #else
@@ -147,8 +137,7 @@ newtype SNatKn (n :: Nat) =
 -- type-level operation. Use 'nameToSymbol' to get the fully qualified
 -- TH Name as a 'Symbol'
 class KnownNat1 (f :: Symbol) (a :: Nat) where
-  type KnownNatF1 f :: Nat ~> Nat
-  natSing1 :: SNatKn (KnownNatF1 f @@ a)
+  natSing1 :: SNatKn f
 
 -- | Class for arithmetic functions with /two/ arguments.
 --
@@ -156,8 +145,7 @@ class KnownNat1 (f :: Symbol) (a :: Nat) where
 -- type-level operation. Use 'nameToSymbol' to get the fully qualified
 -- TH Name as a 'Symbol'
 class KnownNat2 (f :: Symbol) (a :: Nat) (b :: Nat) where
-  type KnownNatF2 f :: Nat ~> Nat ~> Nat
-  natSing2 :: SNatKn (KnownNatF2 f @@ a @@ b)
+  natSing2 :: SNatKn f
 
 -- | Class for arithmetic functions with /three/ arguments.
 --
@@ -165,24 +153,20 @@ class KnownNat2 (f :: Symbol) (a :: Nat) (b :: Nat) where
 -- type-level operation. Use 'nameToSymbol' to get the fully qualified
 -- TH Name as a 'Symbol'
 class KnownNat3 (f :: Symbol) (a :: Nat) (b :: Nat) (c :: Nat) where
-  type KnownNatF3 f :: Nat ~> Nat ~> Nat ~> Nat
-  natSing3 :: SNatKn (KnownNatF3 f @@ a @@ b @@ c)
+  natSing3 :: SNatKn f
 
 -- | 'KnownNat2' instance for "GHC.TypeLits"' 'GHC.TypeLits.+'
 instance (KnownNat a, KnownNat b) => KnownNat2 $(nameToSymbol ''(+)) a b where
-  type KnownNatF2 $(nameToSymbol ''(+)) = (:+$)
   natSing2 = SNatKn (natVal (Proxy @a) + natVal (Proxy @b))
   {-# INLINE natSing2 #-}
 
 -- | 'KnownNat2' instance for "GHC.TypeLits"' 'GHC.TypeLits.*'
 instance (KnownNat a, KnownNat b) => KnownNat2 $(nameToSymbol ''(*)) a b where
-  type KnownNatF2 $(nameToSymbol ''(*)) = (:*$)
   natSing2 = SNatKn (natVal (Proxy @a) * natVal (Proxy @b))
   {-# INLINE natSing2 #-}
 
 -- | 'KnownNat2' instance for "GHC.TypeLits"' 'GHC.TypeLits.^'
 instance (KnownNat a, KnownNat b) => KnownNat2 $(nameToSymbol ''(^)) a b where
-  type KnownNatF2 $(nameToSymbol ''(^)) = (:^$)
   natSing2 = let x = natVal (Proxy @ a)
                  y = natVal (Proxy @ b)
                  z = case x of
@@ -193,6 +177,5 @@ instance (KnownNat a, KnownNat b) => KnownNat2 $(nameToSymbol ''(^)) a b where
 
 -- | 'KnownNat2' instance for "GHC.TypeLits"' 'GHC.TypeLits.-'
 instance (KnownNat a, KnownNat b, b <= a) => KnownNat2 $(nameToSymbol ''(-)) a b where
-  type KnownNatF2 $(nameToSymbol ''(-)) = (:-$)
   natSing2 = SNatKn (natVal (Proxy @a) - natVal (Proxy @b))
   {-# INLINE natSing2 #-}
