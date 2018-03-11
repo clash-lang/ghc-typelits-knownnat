@@ -89,7 +89,7 @@ library
                        ghc-tcplugins-extra       >= 0.2,
                        ghc-typelits-natnormalise >= 0.5.2    && <0.6,
                        transformers              >= 0.5.2.0  && <0.6,
-                       template-haskell          >= 2.11.0.0 && <2.13
+                       template-haskell          >= 2.11.0.0 && <2.14
   hs-source-dirs:      src
   default-language:    Haskell2010
   if flag(deverror)
