@@ -84,6 +84,7 @@ Pragma to the header of your file.
 
 -}
 
+{-# LANGUAGE CPP           #-}
 {-# LANGUAGE LambdaCase    #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE ViewPatterns  #-}
@@ -100,6 +101,9 @@ import Control.Monad.Trans.Maybe    (MaybeT (..))
 import Data.Maybe                   (catMaybes,mapMaybe)
 import GHC.TcPluginM.Extra          (lookupModule, lookupName, newWanted,
                                      tracePlugin)
+#if MIN_VERSION_ghc(8,4,0)
+import GHC.TcPluginM.Extra          (flattenGivens, mkSubst', substType)
+#endif
 import GHC.TypeLits.Normalise.SOP   (SOP (..), Product (..), Symbol (..))
 import GHC.TypeLits.Normalise.Unify (CType (..),normaliseNat,reifySOP)
 
@@ -115,7 +119,10 @@ import OccName    (mkTcOcc, occNameString)
 import Plugins    (Plugin (..), defaultPlugin)
 import PrelNames  (knownNatClassName)
 import TcEvidence (EvTerm (..), EvLit (EvNum), mkEvCast, mkTcSymCo, mkTcTransCo)
-import TcPluginM  (TcPluginM, tcLookupClass, getInstEnvs, zonkCt)
+#if !MIN_VERSION_ghc(8,4,0)
+import TcPluginM  (zonkCt)
+#endif
+import TcPluginM  (TcPluginM, tcLookupClass, getInstEnvs)
 import TcRnTypes  (Ct, TcPlugin(..), TcPluginResult (..), ctEvidence, ctEvLoc,
                    ctEvPred, ctEvTerm, ctLoc, ctLocSpan, isWanted,
                    mkNonCanonical, setCtLoc, setCtLocSpan)
@@ -235,12 +242,22 @@ solveKnownNat _defs _givens _deriveds []      = return (TcPluginOk [] [])
 solveKnownNat defs  givens  _deriveds wanteds = do
   -- GHC 7.10 puts deriveds with the wanteds, so filter them out
   let wanteds'   = filter (isWanted . ctEvidence) wanteds
+#if MIN_VERSION_ghc(8,4,0)
+      subst      = mkSubst' givens
+      kn_wanteds = map (\(x,y,z) -> (x,y,substType subst z))
+                 $ mapMaybe toKnConstraint wanteds'
+#else
       kn_wanteds = mapMaybe toKnConstraint wanteds'
+#endif
   case kn_wanteds of
     [] -> return (TcPluginOk [] [])
     _  -> do
       -- Make a lookup table for all the [G]iven constraints
+#if MIN_VERSION_ghc(8,4,0)
+      let given_map = map toGivenEntry (givens ++ flattenGivens givens)
+#else
       given_map <- mapM (fmap toGivenEntry . zonkCt) givens
+#endif
       -- Try to solve the wanted KnownNat constraints given the [G]iven
       -- KnownNat constraints
       (solved,new) <- (unzip . catMaybes) <$> (mapM (constraintToEvTerm defs given_map) kn_wanteds)
