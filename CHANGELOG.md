@@ -1,5 +1,8 @@
 # Changelog for the [`ghc-typelits-knownnat`](http://hackage.haskell.org/package/ghc-typelits-knownnat) package
 
+## 0.4.1 *March 17th, 2018*
+* Add support for GHC 8.4.1
+
 ## 0.4 *January 4th, 2018*
 * Add partial GHC 8.4.1-alpha1 support
 * Drop `singletons` dependency [#15](https://github.com/clash-lang/ghc-typelits-knownnat/issues/15)
