@@ -113,18 +113,32 @@ import FamInst    (tcInstNewTyCon_maybe)
 import FastString (fsLit)
 import Id         (idType)
 import InstEnv    (instanceDFunId,lookupUniqueInstEnv)
+#if MIN_VERSION_ghc(8,5,0)
+import MkCore     (mkNaturalExpr)
+#endif
 import Module     (mkModuleName, moduleName, moduleNameString)
 import Name       (nameModule_maybe, nameOccName)
 import OccName    (mkTcOcc, occNameString)
 import Plugins    (Plugin (..), defaultPlugin)
 import PrelNames  (knownNatClassName)
+#if MIN_VERSION_ghc(8,5,0)
+import TcEvidence (EvTerm (..), EvExpr, evDFunApp, mkEvCast, mkTcSymCo, mkTcTransCo)
+#else
 import TcEvidence (EvTerm (..), EvLit (EvNum), mkEvCast, mkTcSymCo, mkTcTransCo)
+#endif
+#if MIN_VERSION_ghc(8,5,0)
+import TcPluginM  (unsafeTcPluginTcM)
+#endif
 #if !MIN_VERSION_ghc(8,4,0)
 import TcPluginM  (zonkCt)
 #endif
 import TcPluginM  (TcPluginM, tcLookupClass, getInstEnvs)
 import TcRnTypes  (Ct, TcPlugin(..), TcPluginResult (..), ctEvidence, ctEvLoc,
+#if MIN_VERSION_ghc(8,5,0)
+                   ctEvPred, ctEvExpr, ctLoc, ctLocSpan, isWanted,
+#else
                    ctEvPred, ctEvTerm, ctLoc, ctLocSpan, isWanted,
+#endif
                    mkNonCanonical, setCtLoc, setCtLocSpan)
 import TcTypeNats (typeNatAddTyCon, typeNatSubTyCon)
 import Type
@@ -261,7 +275,11 @@ solveKnownNat defs  givens  _deriveds wanteds = do
       -- Try to solve the wanted KnownNat constraints given the [G]iven
       -- KnownNat constraints
       (solved,new) <- (unzip . catMaybes) <$> (mapM (constraintToEvTerm defs given_map) kn_wanteds)
+#if MIN_VERSION_ghc(8,5,0)
+      return (TcPluginOk (map (first EvExpr) solved) (concat new))
+#else
       return (TcPluginOk solved (concat new))
+#endif
 
 -- | Get the KnownNat constraints
 toKnConstraint :: Ct -> Maybe KnConstraint
@@ -272,10 +290,18 @@ toKnConstraint ct = case classifyPredType $ ctEvPred $ ctEvidence ct of
   _ -> Nothing
 
 -- | Create a look-up entry for a [G]iven constraint.
+#if MIN_VERSION_ghc(8,5,0)
+toGivenEntry :: Ct -> (CType,EvExpr)
+#else
 toGivenEntry :: Ct -> (CType,EvTerm)
+#endif
 toGivenEntry ct = let ct_ev = ctEvidence ct
                       c_ty  = ctEvPred   ct_ev
+#if MIN_VERSION_ghc(8,5,0)
+                      ev    = ctEvExpr   ct_ev
+#else
                       ev    = ctEvTerm   ct_ev
+#endif
                   in  (CType c_ty,ev)
 
 -- | Normalise a type to Sum-of-Product type form as defined in the
@@ -304,10 +330,21 @@ lookupKnownNatDefs = do
     myPackage = fsLit "ghc-typelits-knownnat"
 
 -- | Try to create evidence for a wanted constraint
-constraintToEvTerm :: KnownNatDefs     -- ^ The "magic" KnownNatN classes
-                   -> [(CType,EvTerm)] -- All the [G]iven constraints
-                   -> KnConstraint
-                   -> TcPluginM (Maybe ((EvTerm,Ct),[Ct]))
+constraintToEvTerm
+  :: KnownNatDefs     -- ^ The "magic" KnownNatN classes
+#if MIN_VERSION_ghc(8,5,0)
+  -> [(CType,EvExpr)]
+  -- All the [G]iven constraints
+#else
+  -> [(CType,EvTerm)]
+  -- All the [G]iven constraints
+#endif
+  -> KnConstraint
+#if MIN_VERSION_ghc(8,5,0)
+  -> TcPluginM (Maybe ((EvExpr,Ct),[Ct]))
+#else
+  -> TcPluginM (Maybe ((EvTerm,Ct),[Ct]))
+#endif
 constraintToEvTerm defs givens (ct,cls,op) = do
     -- 1. Normalise to SOP normal form
     let ty = normaliseSOP op
@@ -324,7 +361,11 @@ constraintToEvTerm defs givens (ct,cls,op) = do
     -- Determine whether the outer type-level operation has a corresponding
     -- KnownNat<N> instance, where /N/ corresponds to the arity of the
     -- type-level operation
+#if MIN_VERSION_ghc(8,5,0)
+    go :: Type -> TcPluginM (Maybe (EvExpr,[Ct]))
+#else
     go :: Type -> TcPluginM (Maybe (EvTerm,[Ct]))
+#endif
     go (go_other -> Just ev) = return (Just (ev,[]))
     go ty@(TyConApp tc args)
       | let tcNm = tyConName tc
@@ -353,18 +394,30 @@ constraintToEvTerm defs givens (ct,cls,op) = do
       -- This plugin only solves Literal KnownNat's that needed to be normalised
       -- first
       | otherwise
+#if MIN_VERSION_ghc(8,5,0)
+      = (fmap (,[])) <$> makeLitDict cls op i
+#else
       = return ((,[]) <$> makeLitDict cls op i)
+#endif
     go _ = return Nothing
 
     -- Get EvTerm arguments for type-level operations. If they do not exist
     -- as [G]iven constraints, then generate new [W]anted constraints
+#if MIN_VERSION_ghc(8,5,0)
+    go_arg :: PredType -> TcPluginM (EvExpr,[Ct])
+#else
     go_arg :: PredType -> TcPluginM (EvTerm,[Ct])
+#endif
     go_arg ty = case lookup (CType ty) givens of
       Just ev -> return (ev,[])
       _ -> do
         -- Create a new wanted constraint
         wantedCtEv <- newWanted (ctLoc ct) ty
+#if MIN_VERSION_ghc(8,5,0)
+        let ev      = ctEvExpr wantedCtEv
+#else
         let ev      = ctEvTerm wantedCtEv
+#endif
             wanted  = mkNonCanonical wantedCtEv
         -- Set the source-location of the new wanted constraint to the source
         -- location of the [W]anted constraint we are currently trying to solve
@@ -375,7 +428,11 @@ constraintToEvTerm defs givens (ct,cls,op) = do
 
     -- Fall through case: look up the normalised [W]anted constraint in the list
     -- of [G]iven constraints.
+#if MIN_VERSION_ghc(8,5,0)
+    go_other :: Type -> Maybe EvExpr
+#else
     go_other :: Type -> Maybe EvTerm
+#endif
     go_other ty =
       let knClsTc = classTyCon cls
           kn      = mkTyConApp knClsTc [ty]
@@ -386,7 +443,11 @@ constraintToEvTerm defs givens (ct,cls,op) = do
 
     -- Find a known constraint for a wanted, so that (modulo normalization)
     -- the two are a constant offset apart.
+#if MIN_VERSION_ghc(8,5,0)
+    offset :: Type -> TcPluginM (Maybe (EvExpr,[Ct]))
+#else
     offset :: Type -> TcPluginM (Maybe (EvTerm,[Ct]))
+#endif
     offset want = runMaybeT $ do
       let -- Get the knownnat contraints
           unKn ty' = case classifyPredType ty' of
@@ -448,8 +509,15 @@ makeOpDict :: (Class,DFunId) -- ^ "magic" class function and dictionary function
            -> Class          -- ^ KnownNat class
            -> [Type]         -- ^ Argument types
            -> Type           -- ^ Type of the result
-           -> [EvTerm]       -- ^ Evidence arguments
+#if MIN_VERSION_ghc(8,5,0)
+           -> [EvExpr]
+           -- ^ Evidence arguments
+           -> Maybe EvExpr
+#else
+           -> [EvTerm]
+           -- ^ Evidence arguments
            -> Maybe EvTerm
+#endif
 makeOpDict (opCls,dfid) knCls tyArgs z evArgs
   | Just (_, kn_co_dict) <- tcInstNewTyCon_maybe (classTyCon knCls) [z]
     -- KnownNat n ~ SNat n
@@ -469,7 +537,11 @@ makeOpDict (opCls,dfid) knCls tyArgs z evArgs
                                  $ idType op_meth         -- forall f a b . KnownNat2 f a b => SNatKn (KnownNatF2 f a b)
   , Just (_, op_co_rep) <- tcInstNewTyCon_maybe op_tcRep op_args
     -- SNatKn (a+b) ~ Integer
+#if MIN_VERSION_ghc(8,5,0)
+  , let dfun_inst = evDFunApp dfid (tail tyArgs) evArgs
+#else
   , let dfun_inst = EvDFunApp dfid (tail tyArgs) evArgs
+#endif
         -- KnownNatAdd a b
         op_to_kn  = mkTcTransCo (mkTcTransCo op_co_dict op_co_rep)
                                 (mkTcSymCo (mkTcTransCo kn_co_dict kn_co_rep))
@@ -495,8 +567,15 @@ The coercion happens in the following steps:
 makeKnCoercion :: Class          -- ^ KnownNat class
                -> Type           -- ^ Type of the argument
                -> Type           -- ^ Type of the result
-               -> EvTerm         -- ^ KnownNat dictionary for the argument
+#if MIN_VERSION_ghc(8,5,0)
+               -> EvExpr
+               -- ^ KnownNat dictionary for the argument
+               -> Maybe EvExpr
+#else
+               -> EvTerm
+               -- ^ KnownNat dictionary for the argument
                -> Maybe EvTerm
+#endif
 makeKnCoercion knCls x z xEv
   | Just (_, kn_co_dict_z) <- tcInstNewTyCon_maybe (classTyCon knCls) [z]
     -- KnownNat z ~ SNat z
@@ -523,7 +602,11 @@ makeKnCoercion knCls x z xEv
 --
 --     Integer -> SNat n     -- representation of literal to singleton
 --     SNat n  -> KnownNat n -- singleton to dictionary
+#if MIN_VERSION_ghc(8,5,0)
+makeLitDict :: Class -> Type -> Integer -> TcPluginM (Maybe EvExpr)
+#else
 makeLitDict :: Class -> Type -> Integer -> Maybe EvTerm
+#endif
 makeLitDict clas ty i
   | Just (_, co_dict) <- tcInstNewTyCon_maybe (classTyCon clas) [ty]
     -- co_dict :: KnownNat n ~ SNat n
@@ -534,7 +617,16 @@ makeLitDict clas ty i
                     $ idType meth     -- forall n. KnownNat n => SNat n
   , Just (_, co_rep) <- tcInstNewTyCon_maybe tcRep [ty]
         -- SNat n ~ Integer
+#if MIN_VERSION_ghc(8,5,0)
+  = do
+    et <- unsafeTcPluginTcM (mkNaturalExpr i)
+    let ev_tm = mkEvCast et (mkTcSymCo (mkTcTransCo co_dict co_rep))
+    return (Just ev_tm)
+  | otherwise
+  = return Nothing
+#else
   , let ev_tm = mkEvCast (EvLit (EvNum i)) (mkTcSymCo (mkTcTransCo co_dict co_rep))
   = Just ev_tm
   | otherwise
   = Nothing
+#endif
