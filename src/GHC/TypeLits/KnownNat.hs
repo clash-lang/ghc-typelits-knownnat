@@ -115,12 +115,12 @@ import Data.Bits              (shiftL)
 import Data.Proxy             (Proxy (..))
 #if MIN_VERSION_ghc(8,2,0)
 import GHC.TypeNats
-  (KnownNat, Nat, type (+), type (*), type (^), type (-), type (<=), natVal)
+  (KnownNat, Nat, type (+), type (*), type (^), type (-), natVal)
 import GHC.TypeLits           (Symbol)
 import Numeric.Natural        (Natural)
 #else
 import GHC.TypeLits           (KnownNat, Nat, Symbol, type (+), type (*),
-                               type (^), type (-), type (<=), natVal)
+                               type (^), type (-), natVal)
 #endif
 
 import GHC.TypeLits.KnownNat.TH
@@ -178,6 +178,6 @@ instance (KnownNat a, KnownNat b) => KnownNat2 $(nameToSymbol ''(^)) a b where
   {-# INLINE natSing2 #-}
 
 -- | 'KnownNat2' instance for "GHC.TypeLits"' 'GHC.TypeLits.-'
-instance (KnownNat a, KnownNat b, b <= a) => KnownNat2 $(nameToSymbol ''(-)) a b where
+instance (KnownNat a, KnownNat b) => KnownNat2 $(nameToSymbol ''(-)) a b where
   natSing2 = SNatKn (natVal (Proxy @a) - natVal (Proxy @b))
   {-# INLINE natSing2 #-}

@@ -96,8 +96,9 @@ Pragma to the header of your file.
 module GHC.TypeLits.KnownNat.Solver (plugin) where
 
 -- external
-import Control.Arrow                ((&&&), first)
+import Control.Arrow                ((***), (&&&), first)
 import Control.Monad.Trans.Maybe    (MaybeT (..))
+import Control.Monad.Trans.Writer.Strict
 import Data.Maybe                   (catMaybes,mapMaybe)
 import GHC.TcPluginM.Extra          (lookupModule, lookupName, newWanted,
                                      tracePlugin)
@@ -105,7 +106,8 @@ import GHC.TcPluginM.Extra          (lookupModule, lookupName, newWanted,
 import GHC.TcPluginM.Extra          (flattenGivens, mkSubst', substType)
 #endif
 import GHC.TypeLits.Normalise.SOP   (SOP (..), Product (..), Symbol (..))
-import GHC.TypeLits.Normalise.Unify (CType (..),normaliseNat,reifySOP)
+import GHC.TypeLits.Normalise.Unify
+  (CType (..),normaliseNat,subtractionToPred,reifySOP)
 
 -- GHC API
 import Class      (Class, classMethods, className, classTyCon)
@@ -306,8 +308,8 @@ toGivenEntry ct = let ct_ev = ctEvidence ct
 
 -- | Normalise a type to Sum-of-Product type form as defined in the
 -- `ghc-typelits-natnormalise` package.
-normaliseSOP :: Type -> Type
-normaliseSOP = reifySOP . normaliseNat
+normaliseSOP :: Type -> (Type,[(Type,Type)])
+normaliseSOP = first reifySOP . runWriter . normaliseNat
 
 -- | Find the \"magic\" classes and instances in "GHC.TypeLits.KnownNat"
 lookupKnownNatDefs :: TcPluginM KnownNatDefs
@@ -347,7 +349,8 @@ constraintToEvTerm
 #endif
 constraintToEvTerm defs givens (ct,cls,op) = do
     -- 1. Normalise to SOP normal form
-    let ty = normaliseSOP op
+    let (ty,k) = normaliseSOP op
+    newWanteds <- mapM (fmap snd . makeWantedEv ct . subtractionToPred) k
     -- 2. Determine if we are an offset apart from a [G]iven constraint
     offsetM <- offset ty
     evM     <- case offsetM of
@@ -356,7 +359,7 @@ constraintToEvTerm defs givens (ct,cls,op) = do
                  -- 3.b If not, we check if the outer type-level operation
                  -- has a corresponding KnownNat<N> instance.
                  _ -> go ty
-    return (first (,ct) <$> evM)
+    return (((,ct) *** (++ newWanteds)) <$> evM)
   where
     -- Determine whether the outer type-level operation has a corresponding
     -- KnownNat<N> instance, where /N/ corresponds to the arity of the
@@ -411,20 +414,8 @@ constraintToEvTerm defs givens (ct,cls,op) = do
     go_arg ty = case lookup (CType ty) givens of
       Just ev -> return (ev,[])
       _ -> do
-        -- Create a new wanted constraint
-        wantedCtEv <- newWanted (ctLoc ct) ty
-#if MIN_VERSION_ghc(8,5,0)
-        let ev      = ctEvExpr wantedCtEv
-#else
-        let ev      = ctEvTerm wantedCtEv
-#endif
-            wanted  = mkNonCanonical wantedCtEv
-        -- Set the source-location of the new wanted constraint to the source
-        -- location of the [W]anted constraint we are currently trying to solve
-        let ct_ls   = ctLocSpan (ctLoc ct)
-            ctl     = ctEvLoc  wantedCtEv
-            wanted' = setCtLoc wanted (setCtLocSpan ctl ct_ls)
-        return (ev,[wanted'])
+        (ev,wanted) <- makeWantedEv ct ty
+        return (ev,[wanted])
 
     -- Fall through case: look up the normalised [W]anted constraint in the list
     -- of [G]iven constraints.
@@ -471,7 +462,8 @@ constraintToEvTerm defs givens (ct,cls,op) = do
           -- pair up the sum-of-products KnownNat constraints
           -- with the original Nat operation
           subWant  = mkTyConApp typeNatSubTyCon . (:[want])
-          exploded = map (normaliseNat . subWant &&& id) (knowns ++ knownsR)
+          exploded = map (fst . runWriter . normaliseNat . subWant &&& id)
+                         (knowns ++ knownsR)
           -- interesting cases for us are those where
           -- wanted and given only differ by a constant
           examineDiff (S [P [I n]]) entire = Just (entire,I n)
@@ -486,6 +478,30 @@ constraintToEvTerm defs givens (ct,cls,op) = do
                     | otherwise -> mkTyConApp typeNatSubTyCon [h,mkNumLitTy i]
                 _ -> mkTyConApp typeNatSubTyCon [h,reifySOP (S [P [corr]])]
       MaybeT (go x)
+
+makeWantedEv
+  :: Ct
+  -> Type
+#if MIN_VERSION_ghc(8,5,0)
+  -> TcPluginM (EvExpr,Ct)
+#else
+  -> TcPluginM (EvTerm,Ct)
+#endif
+makeWantedEv ct ty = do
+  -- Create a new wanted constraint
+  wantedCtEv <- newWanted (ctLoc ct) ty
+#if MIN_VERSION_ghc(8,5,0)
+  let ev      = ctEvExpr wantedCtEv
+#else
+  let ev      = ctEvTerm wantedCtEv
+#endif
+      wanted  = mkNonCanonical wantedCtEv
+      -- Set the source-location of the new wanted constraint to the source
+      -- location of the [W]anted constraint we are currently trying to solve
+      ct_ls   = ctLocSpan (ctLoc ct)
+      ctl     = ctEvLoc  wantedCtEv
+      wanted' = setCtLoc wanted (setCtLocSpan ctl ct_ls)
+  return (ev,wanted')
 
 {- |
 Given:
