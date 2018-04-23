@@ -88,7 +88,7 @@ library
   build-depends:       base                      >= 4.9      && <5,
                        ghc                       >= 8.0.1    && <8.6,
                        ghc-tcplugins-extra       >= 0.2.5,
-                       ghc-typelits-natnormalise >= 0.5.10   && <0.7,
+                       ghc-typelits-natnormalise >= 0.6      && <0.7,
                        transformers              >= 0.5.2.0  && <0.6,
                        template-haskell          >= 2.11.0.0 && <2.14
   hs-source-dirs:      src
@@ -104,7 +104,7 @@ test-suite test-ghc-typelits-knownnat
   Other-Modules:       TestFunctions
   build-depends:       base                      >= 4.8   && <5,
                        ghc-typelits-knownnat,
-                       ghc-typelits-natnormalise >= 0.5.10 && <0.7,
+                       ghc-typelits-natnormalise >= 0.6   && <0.7,
                        tasty                     >= 0.10,
                        tasty-hunit               >= 0.9,
                        tasty-quickcheck          >= 0.8
