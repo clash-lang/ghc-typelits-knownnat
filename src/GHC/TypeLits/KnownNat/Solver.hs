@@ -348,17 +348,17 @@ constraintToEvTerm
   -> TcPluginM (Maybe ((EvTerm,Ct),[Ct]))
 #endif
 constraintToEvTerm defs givens (ct,cls,op) = do
-    -- 1. Normalise to SOP normal form
-    let (ty,k) = normaliseSOP op
+    -- 1. Get all the inequalities for the present subtractions
+    let (_,k) = normaliseSOP op
     newWanteds <- mapM (fmap snd . makeWantedEv ct . subtractionToPred) k
     -- 2. Determine if we are an offset apart from a [G]iven constraint
-    offsetM <- offset ty
+    offsetM <- offset op
     evM     <- case offsetM of
                  -- 3.a If so, we are done
                  found@Just {} -> return found
                  -- 3.b If not, we check if the outer type-level operation
                  -- has a corresponding KnownNat<N> instance.
-                 _ -> go ty
+                 _ -> go op
     return (((,ct) *** (++ newWanteds)) <$> evM)
   where
     -- Determine whether the outer type-level operation has a corresponding
