@@ -159,7 +159,7 @@ test21 _ _ = natVal (Proxy :: Proxy n)
 test22 :: forall x y . (KnownNat x, KnownNat y) => Proxy x -> Proxy y -> Number
 test22 _ _ = natVal (Proxy :: Proxy (y*x*y))
 
-test23 :: SNat addrSize -> SNat ((addrSize + 1) - (addrSize - 1))
+test23 :: (1 <= addrSize) => SNat addrSize -> SNat ((addrSize + 1) - (addrSize - 1))
 test23 SNat = SNat
 
 test24 :: (KnownNat n, n ~ (m+1)) => proxy m -> Number

@@ -115,12 +115,12 @@ import Data.Bits              (shiftL)
 import Data.Proxy             (Proxy (..))
 #if MIN_VERSION_ghc(8,2,0)
 import GHC.TypeNats
-  (KnownNat, Nat, type (+), type (*), type (^), type (-), type (<=), natVal)
+  (KnownNat, Nat, type (+), type (*), type (^), type (-), natVal, type (<=))
 import GHC.TypeLits           (Symbol)
 import Numeric.Natural        (Natural)
 #else
 import GHC.TypeLits           (KnownNat, Nat, Symbol, type (+), type (*),
-                               type (^), type (-), type (<=), natVal)
+                               type (^), type (-), natVal, type (<=))
 #endif
 
 import GHC.TypeLits.KnownNat.TH
