@@ -96,7 +96,7 @@ Pragma to the header of your file.
 module GHC.TypeLits.KnownNat.Solver (plugin) where
 
 -- external
-import Control.Arrow                ((***), (&&&), first)
+import Control.Arrow                ((&&&), first)
 import Control.Monad.Trans.Maybe    (MaybeT (..))
 import Control.Monad.Trans.Writer.Strict
 import Data.Maybe                   (catMaybes,mapMaybe)
@@ -106,8 +106,7 @@ import GHC.TcPluginM.Extra          (lookupModule, lookupName, newWanted,
 import GHC.TcPluginM.Extra          (flattenGivens, mkSubst', substType)
 #endif
 import GHC.TypeLits.Normalise.SOP   (SOP (..), Product (..), Symbol (..))
-import GHC.TypeLits.Normalise.Unify
-  (CType (..),normaliseNat,subtractionToPred,reifySOP)
+import GHC.TypeLits.Normalise.Unify (CType (..),normaliseNat,reifySOP)
 
 -- GHC API
 import Class      (Class, classMethods, className, classTyCon)
@@ -306,11 +305,6 @@ toGivenEntry ct = let ct_ev = ctEvidence ct
 #endif
                   in  (CType c_ty,ev)
 
--- | Normalise a type to Sum-of-Product type form as defined in the
--- `ghc-typelits-natnormalise` package.
-normaliseSOP :: Type -> (Type,[(Type,Type)])
-normaliseSOP = first reifySOP . runWriter . normaliseNat
-
 -- | Find the \"magic\" classes and instances in "GHC.TypeLits.KnownNat"
 lookupKnownNatDefs :: TcPluginM KnownNatDefs
 lookupKnownNatDefs = do
@@ -348,10 +342,7 @@ constraintToEvTerm
   -> TcPluginM (Maybe ((EvTerm,Ct),[Ct]))
 #endif
 constraintToEvTerm defs givens (ct,cls,op) = do
-    -- 1. Get all the inequalities for the present subtractions
-    let (_,k) = normaliseSOP op
-    newWanteds <- mapM (fmap snd . makeWantedEv ct . subtractionToPred) k
-    -- 2. Determine if we are an offset apart from a [G]iven constraint
+    -- 1. Determine if we are an offset apart from a [G]iven constraint
     offsetM <- offset op
     evM     <- case offsetM of
                  -- 3.a If so, we are done
@@ -359,7 +350,7 @@ constraintToEvTerm defs givens (ct,cls,op) = do
                  -- 3.b If not, we check if the outer type-level operation
                  -- has a corresponding KnownNat<N> instance.
                  _ -> go op
-    return (((,ct) *** (++ newWanteds)) <$> evM)
+    return ((first (,ct)) <$> evM)
   where
     -- Determine whether the outer type-level operation has a corresponding
     -- KnownNat<N> instance, where /N/ corresponds to the arity of the

@@ -98,7 +98,7 @@ test8 _ _ = natVal (Proxy :: Proxy (Min n m + 1))
 test9 :: forall n m . (KnownNat m, KnownNat n, n <= m) => Proxy m -> Proxy n -> Number
 test9 _ _ = natVal (Proxy :: Proxy (m-n))
 
-test10 :: forall (n :: Nat) m . (KnownNat m, n <= m) => Proxy m -> Proxy n -> Number
+test10 :: forall (n :: Nat) m . (KnownNat m) => Proxy m -> Proxy n -> Number
 test10 _ _ = natVal (Proxy :: Proxy (m-n+n))
 
 test11 :: forall m . (KnownNat m) => Proxy m -> Number
