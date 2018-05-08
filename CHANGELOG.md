@@ -1,5 +1,8 @@
 # Changelog for the [`ghc-typelits-knownnat`](http://hackage.haskell.org/package/ghc-typelits-knownnat) package
 
+## 0.5 *May 9th 2018*
+* Fix Inferred constraint is too strong [#19](https://github.com/clash-lang/ghc-typelits-knownnat/issues/19)
+
 ## 0.4.2 *April 15th 2018*
 * Add support for GHC 8.5.20180306
 
