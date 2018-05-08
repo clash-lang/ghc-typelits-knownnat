@@ -87,7 +87,7 @@ library
                        ViewPatterns
   build-depends:       base                      >= 4.9      && <5,
                        ghc                       >= 8.0.1    && <8.6,
-                       ghc-tcplugins-extra       >= 0.2.5,
+                       ghc-tcplugins-extra       >= 0.3,
                        ghc-typelits-natnormalise >= 0.6      && <0.7,
                        transformers              >= 0.5.2.0  && <0.6,
                        template-haskell          >= 2.11.0.0 && <2.14

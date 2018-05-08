@@ -258,7 +258,8 @@ solveKnownNat defs  givens  _deriveds wanteds = do
   -- GHC 7.10 puts deriveds with the wanteds, so filter them out
   let wanteds'   = filter (isWanted . ctEvidence) wanteds
 #if MIN_VERSION_ghc(8,4,0)
-      subst      = mkSubst' givens
+      subst      = map fst
+                 $ mkSubst' givens
       kn_wanteds = map (\(x,y,z) -> (x,y,substType subst z))
                  $ mapMaybe toKnConstraint wanteds'
 #else
@@ -269,7 +270,7 @@ solveKnownNat defs  givens  _deriveds wanteds = do
     _  -> do
       -- Make a lookup table for all the [G]iven constraints
 #if MIN_VERSION_ghc(8,4,0)
-      let given_map = map toGivenEntry (givens ++ flattenGivens givens)
+      let given_map = map toGivenEntry (flattenGivens givens)
 #else
       given_map <- mapM (fmap toGivenEntry . zonkCt) givens
 #endif
