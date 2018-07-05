@@ -93,6 +93,9 @@ type family Max (a :: Nat) (b :: Nat) :: Nat where
 {-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeOperators         #-}
 {-# LANGUAGE TypeFamilies          #-}
+#if MIN_VERSION_ghc(8,6,0)
+{-# LANGUAGE NoStarIsType #-}
+#endif
 
 {-# LANGUAGE Trustworthy #-}
 

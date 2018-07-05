@@ -1,6 +1,8 @@
 {-# LANGUAGE CPP, DataKinds, GADTs, KindSignatures, ScopedTypeVariables, TypeOperators,
              TypeApplications, TypeFamilies, TypeFamilyDependencies, FlexibleContexts #-}
-
+#if __GLASGOW_HASKELL__ >= 805
+{-# LANGUAGE NoStarIsType #-}
+#endif
 {-# OPTIONS_GHC -fplugin GHC.TypeLits.Normalise       #-}
 {-# OPTIONS_GHC -fplugin GHC.TypeLits.KnownNat.Solver #-}
 #if __GLASGOW_HASKELL__ >= 802
@@ -9,6 +11,7 @@
 
 module Main where
 
+import Data.Kind (Type)
 import Data.Proxy
 import Data.Type.Equality ((:~:)(..))
 #if __GLASGOW_HASKELL__ >= 802
@@ -126,7 +129,7 @@ test16 _ _ = natVal (Proxy @ (Foo 1 + 7 + Foo 1))
 test17 :: KnownNat (4 + 2 * Foo 1 + Foo 1) => Proxy (Foo 1) -> Proxy (4 + 2 * Foo 1 + Foo 1) -> Number
 test17 _ _ = natVal (Proxy @ (2 * Foo 1 + 7 + Foo 1))
 
-data SNat :: Nat -> * where
+data SNat :: Nat -> Type where
   SNat :: KnownNat n => SNat n
 
 instance Show (SNat n) where
