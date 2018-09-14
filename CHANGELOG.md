@@ -1,5 +1,8 @@
 # Changelog for the [`ghc-typelits-knownnat`](http://hackage.haskell.org/package/ghc-typelits-knownnat) package
 
+## 0.5.1
+* Move `KnownNat2` instances for `Div` and `Mod` from `ghc-typelits-extra` to `ghc-typelits-knownnat`
+
 ## 0.5 *May 9th 2018*
 * Fix Inferred constraint is too strong [#19](https://github.com/clash-lang/ghc-typelits-knownnat/issues/19)
 

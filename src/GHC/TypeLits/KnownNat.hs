@@ -119,6 +119,9 @@ import Data.Proxy             (Proxy (..))
 #if MIN_VERSION_ghc(8,2,0)
 import GHC.TypeNats
   (KnownNat, Nat, type (+), type (*), type (^), type (-), natVal, type (<=))
+#if MIN_VERSION_base(4,11,0)
+import GHC.TypeNats           (Div, Mod)
+#endif
 import GHC.TypeLits           (Symbol)
 import Numeric.Natural        (Natural)
 #else
@@ -184,3 +187,11 @@ instance (KnownNat a, KnownNat b) => KnownNat2 $(nameToSymbol ''(^)) a b where
 instance (KnownNat a, KnownNat b, b <= a) => KnownNat2 $(nameToSymbol ''(-)) a b where
   natSing2 = SNatKn (natVal (Proxy @a) - natVal (Proxy @b))
   {-# INLINE natSing2 #-}
+
+#if MIN_VERSION_base(4,11,0)
+instance (KnownNat x, KnownNat y, 1 <= y) => KnownNat2 $(nameToSymbol ''Div) x y where
+  natSing2 = SNatKn (quot (natVal (Proxy @x)) (natVal (Proxy @y)))
+
+instance (KnownNat x, KnownNat y, 1 <= y) => KnownNat2 $(nameToSymbol ''Mod) x y where
+  natSing2 = SNatKn (rem (natVal (Proxy @x)) (natVal (Proxy @y)))
+#endif
