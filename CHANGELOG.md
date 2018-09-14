@@ -1,6 +1,6 @@
 # Changelog for the [`ghc-typelits-knownnat`](http://hackage.haskell.org/package/ghc-typelits-knownnat) package
 
-## 0.5.1
+## 0.6
 * Move `KnownNat2` instances for `Div` and `Mod` from `ghc-typelits-extra` to `ghc-typelits-knownnat`
 
 ## 0.5 *May 9th 2018*
