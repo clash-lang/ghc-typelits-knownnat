@@ -93,7 +93,9 @@ Pragma to the header of your file.
 
 {-# OPTIONS_HADDOCK show-extensions #-}
 
-module GHC.TypeLits.KnownNat.Solver (plugin) where
+module GHC.TypeLits.KnownNat.Solver
+  ( plugin )
+where
 
 -- external
 import Control.Arrow                ((&&&), first)
@@ -110,6 +112,9 @@ import GHC.TypeLits.Normalise.Unify (CType (..),normaliseNat,reifySOP)
 
 -- GHC API
 import Class      (Class, classMethods, className, classTyCon)
+#if MIN_VERSION_ghc(8,6,0)
+import Coercion   (Role (Representational), mkUnivCo)
+#endif
 import FamInst    (tcInstNewTyCon_maybe)
 import FastString (fsLit)
 import Id         (idType)
@@ -148,13 +153,23 @@ import TcTypeNats (typeNatAddTyCon, typeNatSubTyCon)
 import Type
   (EqRel (NomEq), PredTree (ClassPred,EqPred), PredType, classifyPredType,
    dropForAlls, eqType, funResultTy, mkNumLitTy, mkStrLitTy, mkTyConApp,
-   piResultTys, splitFunTys, splitTyConApp_maybe, tyConAppTyCon_maybe)
+   piResultTys, splitFunTys, splitTyConApp_maybe, tyConAppTyCon_maybe, typeKind)
 import TyCon      (tyConName)
 import TyCoRep    (Type (..), TyLit (..))
+#if MIN_VERSION_ghc(8,6,0)
+import TyCoRep    (UnivCoProvenance (PluginProv))
+import TysWiredIn (boolTy)
+#endif
 import Var        (DFunId)
 
 -- | Classes and instances from "GHC.TypeLits.KnownNat"
-type KnownNatDefs = Int -> Maybe Class -- ^ KnownNatN class
+data KnownNatDefs
+  = KnownNatDefs
+  { knownBool     :: Class
+  , knownBoolNat2 :: Class
+  , knownNat2Bool :: Class
+  , knownNatN     :: Int -> Maybe Class -- ^ KnownNat{N}
+  }
 
 -- | KnownNat constraints
 type KnConstraint = (Ct    -- The constraint
@@ -270,9 +285,9 @@ solveKnownNat defs  givens  _deriveds wanteds = do
       subst      = map fst
                  $ mkSubst' givens
       kn_wanteds = map (\(x,y,z) -> (x,y,substType subst z))
-                 $ mapMaybe toKnConstraint wanteds'
+                 $ mapMaybe (toKnConstraint defs) wanteds'
 #else
-      kn_wanteds = mapMaybe toKnConstraint wanteds'
+      kn_wanteds = mapMaybe (toKnConstraint defs) wanteds'
 #endif
   case kn_wanteds of
     [] -> return (TcPluginOk [] [])
@@ -289,10 +304,11 @@ solveKnownNat defs  givens  _deriveds wanteds = do
       return (TcPluginOk solved (concat new))
 
 -- | Get the KnownNat constraints
-toKnConstraint :: Ct -> Maybe KnConstraint
-toKnConstraint ct = case classifyPredType $ ctEvPred $ ctEvidence ct of
+toKnConstraint :: KnownNatDefs -> Ct -> Maybe KnConstraint
+toKnConstraint defs ct = case classifyPredType $ ctEvPred $ ctEvidence ct of
   ClassPred cls [ty]
-    |  className cls == knownNatClassName
+    |  className cls == knownNatClassName ||
+       className cls == className (knownBool defs)
     -> Just (ct,cls,ty)
   _ -> Nothing
 
@@ -315,14 +331,22 @@ toGivenEntry ct = let ct_ev = ctEvidence ct
 lookupKnownNatDefs :: TcPluginM KnownNatDefs
 lookupKnownNatDefs = do
     md     <- lookupModule myModule myPackage
+    kbC    <- look md "KnownBool"
+    kbn2C  <- look md "KnownBoolNat2"
+    kn2bC  <- look md "KnownNat2Bool"
     kn1C   <- look md "KnownNat1"
     kn2C   <- look md "KnownNat2"
     kn3C   <- look md "KnownNat3"
-    return $ (\case { 1 -> Just kn1C
-                    ; 2 -> Just kn2C
-                    ; 3 -> Just kn3C
-                    ; _ -> Nothing
-                    })
+    return KnownNatDefs
+           { knownBool     = kbC
+           , knownBoolNat2 = kbn2C
+           , knownNat2Bool = kn2bC
+           , knownNatN     = \case { 1 -> Just kn1C
+                                   ; 2 -> Just kn2C
+                                   ; 3 -> Just kn3C
+                                   ; _ -> Nothing
+                                   }
+           }
   where
     look md s = do
       nm   <- lookupName md (mkTcOcc s)
@@ -359,26 +383,49 @@ constraintToEvTerm defs givens (ct,cls,op) = do
     -- type-level operation
     go :: Type -> TcPluginM (Maybe (EvTerm,[Ct]))
     go (go_other -> Just ev) = return (Just (ev,[]))
-    go ty@(TyConApp tc args)
+    go ty@(TyConApp tc args0)
       | let tcNm = tyConName tc
       , Just m <- nameModule_maybe tcNm
-      , Just knN_cls <- defs (length args)
-      = do let mS    = moduleNameString (moduleName m)
-               tcS   = occNameString (nameOccName tcNm)
-               fn    = mkStrLitTy (fsLit (mS ++ "." ++ tcS))
-               args' = fn:args
-           ienv <- getInstEnvs
-           case lookupUniqueInstEnv ienv knN_cls args' of
-             Right (inst, _) -> do
-               let df_id   = instanceDFunId inst
-                   df      = (knN_cls,df_id)
-                   df_args = fst                  -- [KnownNat x, KnownNat y]
-                           . splitFunTys          -- ([KnownNat x, KnowNat y], DKnownNat2 "+" x y)
-                           . (`piResultTys` args) -- (KnowNat x, KnownNat y) => DKnownNat2 "+" x y
-                           $ idType df_id         -- forall a b . (KnownNat a, KnownNat b) => DKnownNat2 "+" a b
-               (evs,new) <- unzip <$> mapM go_arg df_args
-               return ((,concat new) <$> makeOpDict df cls args' op evs)
-             _ -> return ((,[]) <$> go_other ty)
+      = do
+        ienv <- getInstEnvs
+        let mS  = moduleNameString (moduleName m)
+            tcS = occNameString (nameOccName tcNm)
+            fn0 = mS ++ "." ++ tcS
+            fn1 = mkStrLitTy (fsLit fn0)
+            args1 = fn1:args0
+            instM = case () of
+              () | Just knN_cls    <- knownNatN defs (length args0)
+                 , Right (inst, _) <- lookupUniqueInstEnv ienv knN_cls args1
+                 -> Just (inst,knN_cls,args0,args1)
+                 | length args0 == 2
+                 , let knN_cls = knownBoolNat2 defs
+                       ki      = typeKind (head args0)
+                       args1N  = ki:args1
+                 , Right (inst, _) <- lookupUniqueInstEnv ienv knN_cls args1N
+                 -> Just (inst,knN_cls,args0,args1N)
+                 | length args0 == 4
+                 , fn0 == "Data.Type.Bool.If"
+                 , let args0N = tail args0
+                       args1N = head args0:fn1:tail args0
+                       knN_cls = knownNat2Bool defs
+                 , Right (inst, _) <- lookupUniqueInstEnv ienv knN_cls args1N
+                 -> Just (inst,knN_cls,args0N,args1N)
+                 | otherwise
+                 -> Nothing
+        case instM of
+          Just (inst,knN_cls,args0N,args1N) -> do
+            let df_id   = instanceDFunId inst
+                df      = (knN_cls,df_id)
+                df_args = fst                  -- [KnownNat x, KnownNat y]
+                        . splitFunTys          -- ([KnownNat x, KnowNat y], DKnownNat2 "+" x y)
+                        . (`piResultTys` args0N) -- (KnowNat x, KnownNat y) => DKnownNat2 "+" x y
+                        $ idType df_id         -- forall a b . (KnownNat a, KnownNat b) => DKnownNat2 "+" a b
+            (evs,new) <- unzip <$> mapM go_arg df_args
+            if className cls == className (knownBool defs)
+               then return ((,concat new) <$> makeOpDictByFiat df cls args1N args0N op evs)
+               else return ((,concat new) <$> makeOpDict df cls args1N args0N op evs)
+          _ -> return ((,[]) <$> go_other ty)
+
     go (LitTy (NumTyLit i))
       -- Let GHC solve simple Literal constraints
       | LitTy _ <- op
@@ -506,18 +553,24 @@ dictionary for binary functions, the coercion happens in the following steps:
 
 this process is mirrored for the dictionary functions of a higher arity
 -}
-makeOpDict :: (Class,DFunId) -- ^ "magic" class function and dictionary function id
-           -> Class          -- ^ KnownNat class
-           -> [Type]         -- ^ Argument types
-           -> Type           -- ^ Type of the result
+makeOpDict
+  :: (Class,DFunId)
+  -- ^ "magic" class function and dictionary function id
+  -> Class
+  -- ^ KnownNat class
+  -> [Type]
+  -- ^ Argument types for the Class
+  -> [Type]
+  -- ^ Argument types for the Instance
+  -> Type           -- ^ Type of the result
 #if MIN_VERSION_ghc(8,5,0)
-           -> [EvExpr]
+  -> [EvExpr]
 #else
-           -> [EvTerm]
+  -> [EvTerm]
 #endif
-           -- ^ Evidence arguments
-           -> Maybe EvTerm
-makeOpDict (opCls,dfid) knCls tyArgs z evArgs
+  -- ^ Evidence arguments
+  -> Maybe EvTerm
+makeOpDict (opCls,dfid) knCls tyArgsC tyArgsI z evArgs
   | Just (_, kn_co_dict) <- tcInstNewTyCon_maybe (classTyCon knCls) [z]
     -- KnownNat n ~ SNat n
   , [ kn_meth ] <- classMethods knCls
@@ -527,19 +580,19 @@ makeOpDict (opCls,dfid) knCls tyArgs z evArgs
                       $ idType kn_meth   -- forall n. KnownNat n => SNat n
   , Just (_, kn_co_rep) <- tcInstNewTyCon_maybe kn_tcRep [z]
     -- SNat n ~ Integer
-  , Just (_, op_co_dict) <- tcInstNewTyCon_maybe (classTyCon opCls) tyArgs
+  , Just (_, op_co_dict) <- tcInstNewTyCon_maybe (classTyCon opCls) tyArgsC
     -- KnownNatAdd a b ~ SNatKn (a+b)
   , [ op_meth ] <- classMethods opCls
   , Just (op_tcRep,op_args) <- splitTyConApp_maybe        -- (SNatKn, [KnownNatF2 f x y])
                                  $ funResultTy            -- SNatKn (KnownNatF2 f x y)
-                                 $ (`piResultTys` tyArgs) -- KnownNatAdd f x y => SNatKn (KnownNatF2 f x y)
+                                 $ (`piResultTys` tyArgsC) -- KnownNatAdd f x y => SNatKn (KnownNatF2 f x y)
                                  $ idType op_meth         -- forall f a b . KnownNat2 f a b => SNatKn (KnownNatF2 f a b)
   , Just (_, op_co_rep) <- tcInstNewTyCon_maybe op_tcRep op_args
     -- SNatKn (a+b) ~ Integer
 #if MIN_VERSION_ghc(8,5,0)
-  , let EvExpr dfun_inst = evDFunApp dfid (tail tyArgs) evArgs
+  , let EvExpr dfun_inst = evDFunApp dfid tyArgsI evArgs
 #else
-  , let dfun_inst = EvDFunApp dfid (tail tyArgs) evArgs
+  , let dfun_inst = EvDFunApp dfid tyArgsI evArgs
 #endif
         -- KnownNatAdd a b
         op_to_kn  = mkTcTransCo (mkTcTransCo op_co_dict op_co_rep)
@@ -626,4 +679,75 @@ makeLitDict clas ty i
   = Just ev_tm
   | otherwise
   = Nothing
+#endif
+
+{- |
+Given:
+
+* A "magic" class, and corresponding instance dictionary function, for a
+  type-level boolean operation
+* Two KnownBool dictionaries
+
+makeOpDictByFiat instantiates the dictionary function with the KnownBool
+dictionaries, and coerces it to a KnownBool dictionary. i.e. for KnownBoolNat2,
+the "magic" dictionary for binary functions, the coercion happens in the
+following steps:
+
+1. KnownBoolNat2 "<=?" x y     -> SBoolF "<=?"
+2. SBoolF "<=?"                -> Bool
+3. Bool                        -> SNat (x <=? y)  THE BY FIAT PART!
+4. SBool (x <=? y)             -> KnownBool (x <=? y)
+
+this process is mirrored for the dictionary functions of a higher arity
+-}
+makeOpDictByFiat
+  :: (Class,DFunId)
+  -- ^ "magic" class function and dictionary function id
+  -> Class
+   -- ^ KnownNat class
+  -> [Type]
+  -- ^ Argument types for the Class
+  -> [Type]
+  -- ^ Argument types for the Instance
+  -> Type
+  -- ^ Type of the result
+#if MIN_VERSION_ghc(8,6,0)
+  -> [EvExpr]
+#else
+  -> [EvTerm]
+#endif
+  -- ^ Evidence arguments
+  -> Maybe EvTerm
+#if MIN_VERSION_ghc(8,6,0)
+makeOpDictByFiat (opCls,dfid) knCls tyArgsC tyArgsI z evArgs
+    -- KnownBool b ~ SBool b
+  | Just (_, kn_co_dict) <- tcInstNewTyCon_maybe (classTyCon knCls) [z]
+  , [ kn_meth ] <- classMethods knCls
+  , Just kn_tcRep <- tyConAppTyCon_maybe -- SBool
+                       $ funResultTy     -- SBool b
+                       $ dropForAlls     -- KnownBool b => SBool b
+                       $ idType kn_meth  -- forall b. KnownBool b => SBool b
+    -- SBool b R~ Bool (The "Lie")
+  , let kn_co_rep = mkUnivCo (PluginProv "ghc-typelits-knownnat")
+                             Representational
+                             (mkTyConApp kn_tcRep [z]) boolTy
+    -- KnownBoolNat2 f a b ~ SBool f
+  , Just (_, op_co_dict) <- tcInstNewTyCon_maybe (classTyCon opCls) tyArgsC
+  , [ op_meth ] <- classMethods opCls
+  , Just (op_tcRep,op_args) <- splitTyConApp_maybe        -- (SBool, [f])
+                                 $ funResultTy            -- SBool f
+                                 $ (`piResultTys` tyArgsC) -- KnownBoolNat2 f x y => SBool f
+                                 $ idType op_meth         -- forall f x y . KnownBoolNat2 f a b => SBoolf f
+    -- SBoolF f ~ Bool
+  , Just (_, op_co_rep) <- tcInstNewTyCon_maybe op_tcRep op_args
+  , EvExpr dfun_inst <- evDFunApp dfid tyArgsI evArgs
+    -- KnownBoolNat2 f x y ~ KnownBool b
+  , let op_to_kn  = mkTcTransCo (mkTcTransCo op_co_dict op_co_rep)
+                                (mkTcSymCo (mkTcTransCo kn_co_dict kn_co_rep))
+        ev_tm     = mkEvCast dfun_inst op_to_kn
+  = Just ev_tm
+  | otherwise
+  = Nothing
+#else
+makeOpDictByFiat _ _ _ _ _ _ = Nothing
 #endif
