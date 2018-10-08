@@ -86,8 +86,11 @@ type family Max (a :: Nat) (b :: Nat) :: Nat where
 {-# LANGUAGE CPP                   #-}
 {-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE KindSignatures        #-}
+{-# LANGUAGE MagicHash             #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE PolyKinds             #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TemplateHaskell       #-}
 {-# LANGUAGE TypeApplications      #-}
@@ -109,6 +112,15 @@ module GHC.TypeLits.KnownNat
   , KnownNat1 (..)
   , KnownNat2 (..)
   , KnownNat3 (..)
+    -- * Singleton boolean
+  , SBool (..)
+  , boolVal
+    -- * KnownBool
+  , KnownBool (..)
+    -- ** Constraint-level boolean functions
+  , SBoolKb (..)
+  , KnownNat2Bool (..)
+  , KnownBoolNat2 (..)
     -- * Template Haskell helper
   , nameToSymbol
   )
@@ -116,17 +128,21 @@ where
 
 import Data.Bits              (shiftL)
 import Data.Proxy             (Proxy (..))
+import Data.Type.Bool         (If)
+import GHC.Prim               (Proxy#)
 #if MIN_VERSION_ghc(8,2,0)
 import GHC.TypeNats
-  (KnownNat, Nat, type (+), type (*), type (^), type (-), natVal, type (<=))
+  (KnownNat, Nat, type (+), type (*), type (^), type (-), type (<=?), type (<=),
+   natVal)
 #if MIN_VERSION_base(4,11,0)
 import GHC.TypeNats           (Div, Mod)
 #endif
 import GHC.TypeLits           (Symbol)
 import Numeric.Natural        (Natural)
 #else
-import GHC.TypeLits           (KnownNat, Nat, Symbol, type (+), type (*),
-                               type (^), type (-), natVal, type (<=))
+import GHC.TypeLits
+  (KnownNat, Nat, Symbol, type (+), type (*), type (^), type (-), type (<=?),
+   type (<=), natVal)
 #endif
 
 import GHC.TypeLits.KnownNat.TH
@@ -195,3 +211,71 @@ instance (KnownNat x, KnownNat y, 1 <= y) => KnownNat2 $(nameToSymbol ''Div) x y
 instance (KnownNat x, KnownNat y, 1 <= y) => KnownNat2 $(nameToSymbol ''Mod) x y where
   natSing2 = SNatKn (rem (natVal (Proxy @x)) (natVal (Proxy @y)))
 #endif
+
+-- | Singleton version of 'Bool'
+data SBool (b :: Bool) where
+  SFalse :: SBool 'False
+  STrue  :: SBool 'True
+
+class KnownBool (b :: Bool) where
+  boolSing :: SBool b
+
+instance KnownBool 'False where
+  boolSing = SFalse
+
+instance KnownBool 'True where
+  boolSing = STrue
+
+-- | Get the 'Bool' value associated with a type-level 'Bool'
+--
+-- Use 'boolVal' if you want to perform the standard boolean operations on the
+-- reified type-level 'Bool'.
+--
+-- Use 'boolSing' if you need a context in which the type-checker needs the
+-- type-level 'Bool' to be either 'True' or 'False'
+--
+-- @
+-- f :: forall proxy b r . KnownBool b => r
+-- f = case boolSing @ b of
+--   SFalse -> -- context with b ~ False
+--   STrue  -> -- context with b ~ True
+-- @
+boolVal :: forall b proxy . KnownBool b => proxy b -> Bool
+boolVal _ = case boolSing :: SBool b of
+  SFalse -> False
+  _      -> True
+
+-- | Get the `Bool` value associated with a type-level `Bool`. See also
+-- 'boolVal' and 'Proxy#'.
+boolVal' :: forall b . KnownBool b => Proxy# b -> Bool
+boolVal' _ = case boolSing :: SBool b of
+  SFalse -> False
+  _      -> True
+
+-- | A type "representationally equal" to 'SBool', used for simpler
+-- implementation of constraint-level functions that need to create instances of
+-- 'KnownBool'
+newtype SBoolKb (f :: Symbol) = SBoolKb Bool
+
+-- | Class for binary functions with a Boolean result.
+--
+-- The 'Symbol' /f/ must correspond to the fully qualified name of the
+-- type-level operation. Use 'nameToSymbol' to get the fully qualified
+-- TH Name as a 'Symbol'
+class KnownBoolNat2 (f :: Symbol) (a :: k) (b :: k) where
+  boolNatSing2 :: SBoolKb f
+
+instance (KnownNat a, KnownNat b) => KnownBoolNat2 $(nameToSymbol ''(<=?)) a b where
+  boolNatSing2 = SBoolKb (natVal (Proxy @a) <= natVal (Proxy @b))
+  {-# INLINE boolNatSing2 #-}
+
+-- | Class for ternary functions with a Natural result.
+--
+-- The 'Symbol' /f/ must correspond to the fully qualified name of the
+-- type-level operation. Use 'nameToSymbol' to get the fully qualified
+-- TH Name as a 'Symbol'
+class KnownNat2Bool (f :: Symbol) (a :: Bool) (b :: k) (c :: k) where
+  natBoolSing3 :: SNatKn f
+
+instance (KnownBool a, KnownNat b, KnownNat c) => KnownNat2Bool $(nameToSymbol ''If) a b c where
+  natBoolSing3 = SNatKn (if boolVal (Proxy @a) then natVal (Proxy @b) else natVal (Proxy @c))

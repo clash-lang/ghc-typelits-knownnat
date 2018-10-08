@@ -24,6 +24,10 @@ import Test.Tasty
 import Test.Tasty.HUnit
 import Test.Tasty.QuickCheck
 import Unsafe.Coerce (unsafeCoerce)
+#if __GLASGOW_HASKELL__ >= 806
+import Data.Type.Bool (If)
+import GHC.TypeLits.KnownNat
+#endif
 
 import TestFunctions
 
@@ -168,6 +172,17 @@ test23 SNat = SNat
 test24 :: (KnownNat n, n ~ (m+1)) => proxy m -> Number
 test24 = natVal
 
+#if __GLASGOW_HASKELL__ >= 806
+test25 :: forall n m . (KnownNat n, KnownNat m) => Proxy n -> Proxy m -> Bool
+test25 _ _ = boolVal (Proxy :: Proxy (n <=? m))
+
+test26 :: forall n m . (KnownNat n, KnownNat m) => Proxy n -> Proxy m -> Natural
+test26 _ _ = natVal (Proxy :: Proxy (If (n <=? m) m n))
+
+test27 :: forall n m . (KnownNat n, KnownNat m) => Proxy n -> Proxy m -> Natural
+test27 _ _ = natVal (Proxy :: Proxy (If (n <=? m) n m))
+#endif
+
 tests :: TestTree
 tests = testGroup "ghc-typelits-natnormalise"
   [ testGroup "Basic functionality"
@@ -256,8 +271,29 @@ tests = testGroup "ghc-typelits-natnormalise"
     , testCase "(KnownNat n, n ~ m + 1) ~ KnownNat m" $
       show (test24 (Proxy @4)) @?=
       "4"
-
     ],
+#if __GLASGOW_HASKELL__ >= 806
+    testGroup "KnownBool"
+    [ testCase "KnownBool (X <=? Y) @2 @3 ~ True" $
+      show (test25 (Proxy @2) (Proxy @3)) @?=
+      "True"
+    , testCase "KnownBool (X <=? Y) @3 @2 ~ False" $
+      show (test25 (Proxy @3) (Proxy @2)) @?=
+      "False"
+    , testCase "KnownNat (If (X <=? Y) Y X) @2 @3 ~ 3" $
+      show (test26 (Proxy @2) (Proxy @3)) @?=
+      "3"
+    , testCase "KnownNat (If (X <=? Y) Y X) @3 @2 ~ 3" $
+      show (test26 (Proxy @3) (Proxy @2)) @?=
+      "3"
+    , testCase "KnownNat (If (X <=? Y) X Y) @2 @3 ~ 2" $
+      show (test27 (Proxy @2) (Proxy @3)) @?=
+      "2"
+    , testCase "KnownNat (If (X <=? Y) X Y) @3 @2 ~ 2" $
+      show (test27 (Proxy @3) (Proxy @2)) @?=
+      "2"
+    ],
+#endif
     testGroup "QuickCheck"
     [ testProperty "addT = (+)" $ (\a b -> (a >= 0 && b >= 0) ==> (addT a b === a + b)),
       testProperty "subT = (-)" $ (\a b -> (a >= b && b >= 0) ==> (subT a b === a - b)),
