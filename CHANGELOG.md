@@ -1,5 +1,8 @@
 # Changelog for the [`ghc-typelits-knownnat`](http://hackage.haskell.org/package/ghc-typelits-knownnat) package
 
+## 0.7 *August 26th 2018*
+* Solve "known" type-level Booleans, also inside `If` (GHC 8.6+)
+
 ## 0.6 *September 14th 2018*
 * Move `KnownNat2` instances for `Div` and `Mod` from `ghc-typelits-extra` to `ghc-typelits-knownnat`
 
