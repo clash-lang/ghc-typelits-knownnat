@@ -53,7 +53,8 @@ build-type:          Simple
 extra-source-files:  README.md
                      CHANGELOG.md
 cabal-version:       >=1.10
-tested-with:         GHC == 8.0.2, GHC == 8.2.2, GHC == 8.4.4, GHC == 8.6.4
+tested-with:         GHC == 8.0.2, GHC == 8.2.2, GHC == 8.4.4, GHC == 8.6.5,
+                     GHC == 8.8.1
 
 source-repository head
   type: git
@@ -85,7 +86,7 @@ library
                        UndecidableInstances
                        ViewPatterns
   build-depends:       base                      >= 4.9      && <5,
-                       ghc                       >= 8.0.1    && <8.8,
+                       ghc                       >= 8.0.1    && <8.9,
                        ghc-prim                  >= 0.4.0.0  && <0.6,
                        ghc-tcplugins-extra       >= 0.3,
                        ghc-typelits-natnormalise >= 0.6      && <0.8,
@@ -104,7 +105,7 @@ test-suite test-ghc-typelits-knownnat
   Other-Modules:       TestFunctions
   build-depends:       base                      >= 4.8   && <5,
                        ghc-typelits-knownnat,
-                       ghc-typelits-natnormalise >= 0.6   && <0.7,
+                       ghc-typelits-natnormalise >= 0.6   && <0.8,
                        tasty                     >= 0.10,
                        tasty-hunit               >= 0.9,
                        tasty-quickcheck          >= 0.8
