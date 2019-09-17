@@ -1,5 +1,8 @@
 # Changelog for the [`ghc-typelits-knownnat`](http://hackage.haskell.org/package/ghc-typelits-knownnat) package
 
+## 0.7.1
+* Fix [#29](https://github.com/clash-lang/ghc-typelits-knownnat/issues/29)
+
 ## 0.7 *August 26th 2018*
 * Solve "known" type-level Booleans, also inside `If` (GHC 8.6+)
 

@@ -183,6 +183,11 @@ test27 :: forall n m . (KnownNat n, KnownNat m) => Proxy n -> Proxy m -> Natural
 test27 _ _ = natVal (Proxy :: Proxy (If (n <=? m) n m))
 #endif
 
+#if __GLASGOW_HASKELL__ >= 804
+test28 :: forall m n . (KnownNat m, (2*n) ~ m) => Proxy m -> Natural
+test28 _ = natVal @n Proxy
+#endif
+
 tests :: TestTree
 tests = testGroup "ghc-typelits-natnormalise"
   [ testGroup "Basic functionality"
@@ -219,6 +224,11 @@ tests = testGroup "ghc-typelits-natnormalise"
     , testCase "KnownNat (y*x*y), x=3 y=4 ~ 48" $
       show (test22 (Proxy @3) (Proxy @4))@?=
       "48"
+#if __GLASGOW_HASKELL__ >= 804
+    , testCase "KnownNat m, 2 * n ~ m, m = 10 ~ 5" $
+      show (test28 (Proxy @10)) @?=
+      "5"
+#endif
     ],
     testGroup "Implications"
     [ testCase "KnownNat m => KnownNat (m*m); @ 5" $

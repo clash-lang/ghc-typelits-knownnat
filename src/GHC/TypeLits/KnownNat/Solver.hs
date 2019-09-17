@@ -150,6 +150,9 @@ import TcRnTypes  (Ct, TcPlugin(..), TcPluginResult (..), ctEvidence, ctEvLoc,
 #endif
                    mkNonCanonical, setCtLoc, setCtLocSpan)
 import TcTypeNats (typeNatAddTyCon, typeNatSubTyCon)
+#if MIN_VERSION_ghc(8,4,0)
+import TcTypeNats (typeNatDivTyCon)
+#endif
 import Type
   (EqRel (NomEq), PredTree (ClassPred,EqPred), PredType, classifyPredType,
    dropForAlls, eqType, funResultTy, mkNumLitTy, mkStrLitTy, mkTyConApp,
@@ -504,11 +507,23 @@ constraintToEvTerm defs givens (ct,cls,op) = do
           interesting = mapMaybe (uncurry examineDiff) exploded
       -- convert the first suitable evidence
       ((h,corr):_) <- pure interesting
-      let x = case corr of
-                I 0 -> h
-                I i | i < 0     -> mkTyConApp typeNatAddTyCon [h,mkNumLitTy (negate i)]
-                    | otherwise -> mkTyConApp typeNatSubTyCon [h,mkNumLitTy i]
-                _ -> mkTyConApp typeNatSubTyCon [h,reifySOP (S [P [corr]])]
+      x <- case corr of
+                I 0 -> pure h
+                I i | i < 0
+                    -> pure (mkTyConApp typeNatAddTyCon [h,mkNumLitTy (negate i)])
+                    | otherwise
+                    -> pure (mkTyConApp typeNatSubTyCon [h,mkNumLitTy i])
+                -- If the offset between a given and a wanted is again the wanted
+                -- then the given is twice the wanted; so we can just divide
+                -- the given by two. Only possible in GHC 8.4+; for 8.2 we simply
+                -- fail because we don't know how to divide.
+                c   | CType (reifySOP (S [P [c]])) == CType want ->
+#if MIN_VERSION_ghc(8,4,0)
+                     pure (mkTyConApp typeNatDivTyCon [h,reifySOP (S [P [I 2]])])
+#else
+                     MaybeT (pure Nothing)
+#endif
+                _ -> pure (mkTyConApp typeNatSubTyCon [h,reifySOP (S [P [corr]])])
       MaybeT (go x)
 
 makeWantedEv
