@@ -494,11 +494,12 @@ constraintToEvTerm defs givens (ct,cls,op) = do
           knowns   = mapMaybe (unKn . unCType . fst) givens
           -- Get all the rewritten KNs
           knownsR  = catMaybes $ concatMap (\t -> map (rewriteTy t) rewrites) knowns
+          knownsX  = knowns ++ knownsR
           -- pair up the sum-of-products KnownNat constraints
           -- with the original Nat operation
           subWant  = mkTyConApp typeNatSubTyCon . (:[want])
           exploded = map (fst . runWriter . normaliseNat . subWant &&& id)
-                         (knowns ++ knownsR)
+                         knownsX
           -- interesting cases for us are those where
           -- wanted and given only differ by a constant
           examineDiff (S [P [I n]]) entire = Just (entire,I n)
@@ -523,6 +524,10 @@ constraintToEvTerm defs givens (ct,cls,op) = do
 #else
                      MaybeT (pure Nothing)
 #endif
+                -- Only solve with a variable offset if we have [G]iven knownnat for it
+                -- Failing to do this check results in #30
+                V v | all (not . eqType (TyVarTy v)) knownsX
+                    -> MaybeT (pure Nothing)
                 _ -> pure (mkTyConApp typeNatSubTyCon [h,reifySOP (S [P [corr]])])
       MaybeT (go x)
 
