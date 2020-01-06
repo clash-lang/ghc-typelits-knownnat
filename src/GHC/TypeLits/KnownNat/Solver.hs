@@ -142,19 +142,13 @@ import TcPluginM  (unsafeTcPluginTcM)
 import TcPluginM  (zonkCt)
 #endif
 import TcPluginM  (TcPluginM, tcLookupClass, getInstEnvs)
-import TcRnTypes  (Ct, TcPlugin(..), TcPluginResult (..), ctEvidence, ctEvLoc,
-#if MIN_VERSION_ghc(8,5,0)
-                   ctEvPred, ctEvExpr, ctLoc, ctLocSpan, isWanted,
-#else
-                   ctEvPred, ctEvTerm, ctLoc, ctLocSpan, isWanted,
-#endif
-                   mkNonCanonical, setCtLoc, setCtLocSpan)
+import TcRnTypes  (TcPlugin(..), TcPluginResult (..))
 import TcTypeNats (typeNatAddTyCon, typeNatSubTyCon)
 #if MIN_VERSION_ghc(8,4,0)
 import TcTypeNats (typeNatDivTyCon)
 #endif
 import Type
-  (EqRel (NomEq), PredTree (ClassPred,EqPred), PredType, classifyPredType,
+  (PredType,
    dropForAlls, eqType, funResultTy, mkNumLitTy, mkStrLitTy, mkTyConApp,
    piResultTys, splitFunTys, splitTyConApp_maybe, tyConAppTyCon_maybe, typeKind)
 import TyCon      (tyConName)
@@ -164,6 +158,23 @@ import TyCoRep    (UnivCoProvenance (PluginProv))
 import TysWiredIn (boolTy)
 #endif
 import Var        (DFunId)
+
+#if MIN_VERSION_ghc(8,10,0)
+import Constraint
+  (Ct, ctEvExpr, ctEvidence, ctEvLoc, ctEvPred, ctLoc, ctLocSpan, isWanted,
+   mkNonCanonical, setCtLoc, setCtLocSpan)
+import Predicate (EqRel (NomEq), Pred (ClassPred,EqPred), classifyPredType)
+#else
+import TcRnTypes
+  (Ct, ctEvidence, ctEvLoc, ctEvPred, ctLoc, ctLocSpan, isWanted, mkNonCanonical,
+   setCtLoc, setCtLocSpan)
+import Type      (EqRel (NomEq), PredTree (ClassPred,EqPred), classifyPredType)
+#if MIN_VERSION_ghc(8,5,0)
+import TcRnTypes (ctEvExpr)
+#else
+import TcRnTypes (ctEvTerm)
+#endif
+#endif
 
 -- | Classes and instances from "GHC.TypeLits.KnownNat"
 data KnownNatDefs
