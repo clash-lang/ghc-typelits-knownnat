@@ -59,8 +59,8 @@ and corresponding @KnownNat2@ instance:
 
 @
 instance (KnownNat a, KnownNat b) => KnownNat2 \"TestFunctions.Max\" a b where
-  natSing2 = let x = natVal (Proxy @ a)
-                 y = natVal (Proxy @ b)
+  natSing2 = let x = natVal (Proxy @a)
+                 y = natVal (Proxy @b)
                  z = max x y
              in  SNatKn z
   \{\-# INLINE natSing2 \#-\}
