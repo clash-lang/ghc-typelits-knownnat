@@ -191,8 +191,8 @@ instance (KnownNat a, KnownNat b) => KnownNat2 $(nameToSymbol ''(*)) a b where
 
 -- | 'KnownNat2' instance for "GHC.TypeLits"' 'GHC.TypeLits.^'
 instance (KnownNat a, KnownNat b) => KnownNat2 $(nameToSymbol ''(^)) a b where
-  natSing2 = let x = natVal (Proxy @ a)
-                 y = natVal (Proxy @ b)
+  natSing2 = let x = natVal (Proxy @a)
+                 y = natVal (Proxy @b)
                  z = case x of
                        2 -> shiftL 1 (fromIntegral y)
                        _ -> x ^ y
@@ -236,7 +236,7 @@ instance KnownBool 'True where
 --
 -- @
 -- f :: forall proxy b r . KnownBool b => r
--- f = case boolSing @ b of
+-- f = case boolSing @b of
 --   SFalse -> -- context with b ~ False
 --   STrue  -> -- context with b ~ True
 -- @
