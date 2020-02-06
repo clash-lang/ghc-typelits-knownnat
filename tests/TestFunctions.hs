@@ -20,8 +20,8 @@ type family Max (a :: Nat) (b :: Nat) :: Nat where
   Max a b = If (a <=? b) b a
 
 instance (KnownNat a, KnownNat b) => KnownNat2 $(nameToSymbol ''Max) a b where
-  natSing2 = let x = natVal (Proxy @ a)
-                 y = natVal (Proxy @ b)
+  natSing2 = let x = natVal (Proxy @a)
+                 y = natVal (Proxy @b)
                  z = max x y
              in  SNatKn z
   {-# INLINE natSing2 #-}
@@ -66,5 +66,5 @@ logInt n = go 0
              GT -> k - 1
 
 instance (KnownNat a) => KnownNat1 $(nameToSymbol ''Log) a where
-  natSing1 = let x = natVal (Proxy @ a)
+  natSing1 = let x = natVal (Proxy @a)
              in SNatKn (logInt x)
