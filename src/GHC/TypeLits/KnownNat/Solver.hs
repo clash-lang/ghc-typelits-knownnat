@@ -185,10 +185,15 @@ data KnownNatDefs
   , knownNatN     :: Int -> Maybe Class -- ^ KnownNat{N}
   }
 
+-- | Simple newtype wrapper to distinguish the original (flattened) argument of
+-- knownnat from the un-flattened version that we work with internally.
+newtype Orig a = Orig { unOrig :: a }
+
 -- | KnownNat constraints
 type KnConstraint = (Ct    -- The constraint
                     ,Class -- KnownNat class
                     ,Type  -- The argument to KnownNat
+                    ,Orig Type  -- Original, flattened, argument to KnownNat
                     )
 
 {-|
@@ -298,7 +303,7 @@ solveKnownNat defs  givens  _deriveds wanteds = do
 #if MIN_VERSION_ghc(8,4,0)
       subst      = map fst
                  $ mkSubst' givens
-      kn_wanteds = map (\(x,y,z) -> (x,y,substType subst z))
+      kn_wanteds = map (\(x,y,z,orig) -> (x,y,substType subst z,orig))
                  $ mapMaybe (toKnConstraint defs) wanteds'
 #else
       kn_wanteds = mapMaybe (toKnConstraint defs) wanteds'
@@ -323,7 +328,7 @@ toKnConstraint defs ct = case classifyPredType $ ctEvPred $ ctEvidence ct of
   ClassPred cls [ty]
     |  className cls == knownNatClassName ||
        className cls == className (knownBool defs)
-    -> Just (ct,cls,ty)
+    -> Just (ct,cls,ty,Orig ty)
   _ -> Nothing
 
 -- | Create a look-up entry for a [G]iven constraint.
@@ -381,7 +386,7 @@ constraintToEvTerm
 
   -> KnConstraint
   -> TcPluginM (Maybe ((EvTerm,Ct),[Ct]))
-constraintToEvTerm defs givens (ct,cls,op) = do
+constraintToEvTerm defs givens (ct,cls,op,orig) = do
     -- 1. Determine if we are an offset apart from a [G]iven constraint
     offsetM <- offset op
     evM     <- case offsetM of
@@ -436,8 +441,42 @@ constraintToEvTerm defs givens (ct,cls,op) = do
                         $ idType df_id         -- forall a b . (KnownNat a, KnownNat b) => DKnownNat2 "+" a b
             (evs,new) <- unzip <$> mapM go_arg df_args
             if className cls == className (knownBool defs)
-               then return ((,concat new) <$> makeOpDictByFiat df cls args1N args0N op evs)
-               else return ((,concat new) <$> makeOpDict df cls args1N args0N op evs)
+               -- Create evidence using the original, flattened, argument of
+               -- the KnownNat we're trying to solve. Not doing this results in
+               -- GHC panics for:
+               -- https://gist.github.com/christiaanb/0d204fe19f89b28f1f8d24feb63f1e63
+               --
+               -- That's because the flattened KnownNat we're asked to solve is
+               -- [W] KnownNat fsk
+               -- given:
+               -- [G] fsk ~ CLog 2 n + 1
+               -- [G] fsk2 ~ n
+               -- [G] fsk2 ~ n + m
+               --
+               -- Our flattening picks one of the solution, so we try to solve
+               -- [W] KnownNat (CLog 2 n + 1)
+               --
+               -- Turns out, GHC wanted us to solve:
+               -- [W] KnownNat (CLog 2 (n + m) + 1)
+               --
+               -- But we have no way of knowing this! Solving the "wrong" expansion
+               -- of 'fsk' results in:
+               --
+               -- ghc: panic! (the 'impossible' happened)
+               -- (GHC version 8.6.5 for x86_64-unknown-linux):
+               --       buildKindCoercion
+               -- CLog 2 (n_a681K + m_a681L)
+               -- CLog 2 n_a681K
+               -- n_a681K + m_a681L
+               -- n_a681K
+               --
+               -- down the line.
+               --
+               -- So while the "shape" of the KnownNat evidence that we return
+               -- follows 'CLog 2 n + 1', the type of the evidence will be
+               -- 'KnownNat fsk'; the one GHC originally asked us to solve.
+               then return ((,concat new) <$> makeOpDictByFiat df cls args1N args0N (unOrig orig) evs)
+               else return ((,concat new) <$> makeOpDict df cls args1N args0N (unOrig orig) evs)
           _ -> return ((,[]) <$> go_other ty)
 
     go (LitTy (NumTyLit i))
