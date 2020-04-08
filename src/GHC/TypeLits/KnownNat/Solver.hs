@@ -113,7 +113,8 @@ import GHC.TypeLits.Normalise.Unify (CType (..),normaliseNat,reifySOP)
 -- GHC API
 import Class      (Class, classMethods, className, classTyCon)
 #if MIN_VERSION_ghc(8,6,0)
-import Coercion   (Role (Representational), mkUnivCo)
+import Coercion   (Role (Representational), coercionKind, mkUnivCo)
+import Pair       (Pair (..))
 #endif
 import FamInst    (tcInstNewTyCon_maybe)
 import FastString (fsLit)
@@ -629,7 +630,14 @@ makeOpDict (opCls,dfid) knCls tyArgsC tyArgsI z evArgs
         op_to_kn  = mkTcTransCo (mkTcTransCo op_co_dict op_co_rep)
                                 (mkTcSymCo (mkTcTransCo kn_co_dict kn_co_rep))
         -- KnownNatAdd a b ~ KnownNat (a+b)
+#if MIN_VERSION_ghc(8,6,0)
+        Pair t1 t2 = coercionKind op_to_kn
+        ev_tm     = mkEvCast dfun_inst
+                             (mkUnivCo (PluginProv "ghc-typelits-knownnat")
+                                       Representational t1 t2)
+#else
         ev_tm     = mkEvCast dfun_inst op_to_kn
+#endif
   = Just ev_tm
   | otherwise
   = Nothing
