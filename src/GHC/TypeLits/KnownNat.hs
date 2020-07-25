@@ -99,6 +99,9 @@ type family Max (a :: Nat) (b :: Nat) :: Nat where
 #if MIN_VERSION_ghc(8,6,0)
 {-# LANGUAGE NoStarIsType #-}
 #endif
+#if !MIN_VERSION_ghc(8,2,0)
+{-# LANGUAGE BangPatterns #-}
+#endif
 
 {-# LANGUAGE Trustworthy #-}
 
@@ -126,7 +129,14 @@ module GHC.TypeLits.KnownNat
   )
 where
 
+#if MIN_VERSION_ghc(8,6,0)
+import GHC.Natural            (shiftLNatural)
+#elif MIN_VERSION_ghc(8,2,0)
 import Data.Bits              (shiftL)
+#else
+import GHC.Int                (Int (..))
+import GHC.Integer            (shiftLInteger)
+#endif
 import Data.Proxy             (Proxy (..))
 import Data.Type.Bool         (If)
 import GHC.Prim               (Proxy#)
@@ -194,7 +204,15 @@ instance (KnownNat a, KnownNat b) => KnownNat2 $(nameToSymbol ''(^)) a b where
   natSing2 = let x = natVal (Proxy @a)
                  y = natVal (Proxy @b)
                  z = case x of
-                       2 -> shiftL 1 (fromIntegral y)
+                       2 ->
+#if MIN_VERSION_ghc(8,6,0)
+                        shiftLNatural 1 (fromIntegral y)
+#elif MIN_VERSION_ghc(8,2,0)
+                        shiftL 1 (fromIntegral y)
+#else
+                        let !(I# y#) = fromIntegral y
+                        in  shiftLInteger 1 y#
+#endif
                        _ -> x ^ y
              in  SNatKn z
   {-# INLINE natSing2 #-}
