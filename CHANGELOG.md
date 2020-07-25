@@ -1,5 +1,8 @@
 # Changelog for the [`ghc-typelits-knownnat`](http://hackage.haskell.org/package/ghc-typelits-knownnat) package
 
+## 0.7.3 *July 25th 2020*
+* Fix https://github.com/clash-lang/clash-compiler/issues/1454
+
 ## 0.7.2 *February 6th 2020*
  * Add support for GHC 8.10.0-alpha2
 

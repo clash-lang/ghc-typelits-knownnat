@@ -1,5 +1,5 @@
 name:                ghc-typelits-knownnat
-version:             0.7.2
+version:             0.7.3
 synopsis:            Derive KnownNat constraints from other KnownNat constraints
 description:
   A type checker plugin for GHC that can derive \"complex\" @KnownNat@
@@ -98,6 +98,8 @@ library
     ghc-options:       -Wall -Werror
   else
     ghc-options:       -Wall
+  if impl(ghc < 8.2)
+    build-depends:     integer-gmp               >= 0.5.1.0
 
 test-suite test-ghc-typelits-knownnat
   type:                exitcode-stdio-1.0
