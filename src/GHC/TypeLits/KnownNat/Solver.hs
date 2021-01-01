@@ -111,6 +111,38 @@ import GHC.TypeLits.Normalise.SOP   (SOP (..), Product (..), Symbol (..))
 import GHC.TypeLits.Normalise.Unify (CType (..),normaliseNat,reifySOP)
 
 -- GHC API
+#if MIN_VERSION_ghc(9,0,0)
+import GHC.Builtin.Names (knownNatClassName)
+import GHC.Builtin.Types (boolTy)
+import GHC.Builtin.Types.Literals (typeNatAddTyCon, typeNatDivTyCon, typeNatSubTyCon)
+import GHC.Core.Class (Class, classMethods, className, classTyCon)
+import GHC.Core.Coercion (Role (Representational), mkUnivCo)
+import GHC.Core.InstEnv (instanceDFunId, lookupUniqueInstEnv)
+import GHC.Core.Make (mkNaturalExpr)
+import GHC.Core.Predicate
+  (EqRel (NomEq), Pred (ClassPred,EqPred), classifyPredType)
+import GHC.Core.TyCo.Rep (Type (..), TyLit (..), UnivCoProvenance (PluginProv))
+import GHC.Core.TyCon (tyConName)
+import GHC.Core.Type
+  (PredType, dropForAlls, eqType, funResultTy, mkNumLitTy, mkStrLitTy, mkTyConApp,
+   piResultTys, splitFunTys, splitTyConApp_maybe, tyConAppTyCon_maybe, typeKind,
+   irrelevantMult)
+import GHC.Data.FastString (fsLit)
+import GHC.Driver.Plugins (Plugin (..), defaultPlugin, purePlugin)
+import GHC.Tc.Instance.Family (tcInstNewTyCon_maybe)
+import GHC.Tc.Plugin (TcPluginM, tcLookupClass, getInstEnvs)
+import GHC.Tc.Types (TcPlugin(..), TcPluginResult (..))
+import GHC.Tc.Types.Constraint
+  (Ct, ctEvExpr, ctEvidence, ctEvLoc, ctEvPred, ctLoc, ctLocSpan, isWanted,
+   mkNonCanonical, setCtLoc, setCtLocSpan)
+import GHC.Tc.Types.Evidence
+  (EvTerm (..), EvExpr, evDFunApp, mkEvCast, mkTcSymCo, mkTcTransCo)
+import GHC.Types.Id (idType)
+import GHC.Types.Name (nameModule_maybe, nameOccName)
+import GHC.Types.Name.Occurrence (mkTcOcc, occNameString)
+import GHC.Types.Var (DFunId)
+import GHC.Unit.Module (mkModuleName, moduleName, moduleNameString)
+#else
 import Class      (Class, classMethods, className, classTyCon)
 #if MIN_VERSION_ghc(8,6,0)
 import Coercion   (Role (Representational), mkUnivCo)
@@ -173,6 +205,7 @@ import Type      (EqRel (NomEq), PredTree (ClassPred,EqPred), classifyPredType)
 import TcRnTypes (ctEvExpr)
 #else
 import TcRnTypes (ctEvTerm)
+#endif
 #endif
 #endif
 
@@ -439,7 +472,11 @@ constraintToEvTerm defs givens (ct,cls,op,orig) = do
                         . splitFunTys          -- ([KnownNat x, KnowNat y], DKnownNat2 "+" x y)
                         . (`piResultTys` args0N) -- (KnowNat x, KnownNat y) => DKnownNat2 "+" x y
                         $ idType df_id         -- forall a b . (KnownNat a, KnownNat b) => DKnownNat2 "+" a b
+#if MIN_VERSION_ghc(9,0,0)
+            (evs,new) <- unzip <$> mapM (go_arg . irrelevantMult) df_args
+#else
             (evs,new) <- unzip <$> mapM go_arg df_args
+#endif
             if className cls == className (knownBool defs)
                -- Create evidence using the original, flattened, argument of
                -- the KnownNat we're trying to solve. Not doing this results in
@@ -739,7 +776,11 @@ makeLitDict clas ty i
         -- SNat n ~ Integer
 #if MIN_VERSION_ghc(8,5,0)
   = do
+#if MIN_VERSION_ghc(9,0,0)
+    let et = mkNaturalExpr i
+#else
     et <- unsafeTcPluginTcM (mkNaturalExpr i)
+#endif
     let ev_tm = mkEvCast et (mkTcSymCo (mkTcTransCo co_dict co_rep))
     return (Just ev_tm)
   | otherwise
