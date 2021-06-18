@@ -154,6 +154,9 @@ import GHC.TypeLits
   (KnownNat, Nat, Symbol, type (+), type (*), type (^), type (-), type (<=?),
    type (<=), natVal)
 #endif
+#if MIN_VERSION_base(4,16,0)
+import Data.Type.Ord (OrdCond)
+#endif
 
 import GHC.TypeLits.KnownNat.TH
 
@@ -286,6 +289,12 @@ class KnownBoolNat2 (f :: Symbol) (a :: k) (b :: k) where
 instance (KnownNat a, KnownNat b) => KnownBoolNat2 $(nameToSymbol ''(<=?)) a b where
   boolNatSing2 = SBoolKb (natVal (Proxy @a) <= natVal (Proxy @b))
   {-# INLINE boolNatSing2 #-}
+
+#if MIN_VERSION_base(4,16,0)
+instance (KnownNat a, KnownNat b) => KnownBoolNat2 $(nameToSymbol ''OrdCond) a b where
+  boolNatSing2 = SBoolKb (natVal (Proxy @a) <= natVal (Proxy @b))
+  {-# INLINE boolNatSing2 #-}
+#endif
 
 -- | Class for ternary functions with a Natural result.
 --
