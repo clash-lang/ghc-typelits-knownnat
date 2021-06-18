@@ -1,5 +1,8 @@
 # Changelog for the [`ghc-typelits-knownnat`](http://hackage.haskell.org/package/ghc-typelits-knownnat) package
 
+## 0.7.6 *June 18th 2021*
+* Add support for GHC 9.2.0.20210422
+
 ## 0.7.5 *February 10th 2021*
 * Raise upper limit for TH dep to allow building on ghc-9.0.1
 

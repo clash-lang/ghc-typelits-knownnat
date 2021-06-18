@@ -115,6 +115,10 @@ import GHC.TypeLits.Normalise.Unify (CType (..),normaliseNat,reifySOP)
 import GHC.Builtin.Names (knownNatClassName)
 import GHC.Builtin.Types (boolTy)
 import GHC.Builtin.Types.Literals (typeNatAddTyCon, typeNatDivTyCon, typeNatSubTyCon)
+#if MIN_VERSION_ghc(9,2,0)
+import GHC.Builtin.Types (promotedFalseDataCon, promotedTrueDataCon)
+import GHC.Builtin.Types.Literals (typeNatCmpTyCon)
+#endif
 import GHC.Core.Class (Class, classMethods, className, classTyCon)
 import GHC.Core.Coercion (Role (Representational), mkUnivCo)
 import GHC.Core.InstEnv (instanceDFunId, lookupUniqueInstEnv)
@@ -449,6 +453,20 @@ constraintToEvTerm defs givens (ct,cls,op,orig) = do
               () | Just knN_cls    <- knownNatN defs (length args0)
                  , Right (inst, _) <- lookupUniqueInstEnv ienv knN_cls args1
                  -> Just (inst,knN_cls,args0,args1)
+#if MIN_VERSION_base(4,16,0)
+                 | fn0 == "Data.Type.Ord.OrdCond"
+                 , [_,cmpNat,TyConApp t1 [],TyConApp t2 [],TyConApp f1 []] <- args0
+                 , TyConApp cmpNatTc args2 <- cmpNat
+                 , cmpNatTc == typeNatCmpTyCon
+                 , t1 == promotedTrueDataCon
+                 , t2 == promotedTrueDataCon
+                 , f1 == promotedFalseDataCon
+                 , let knN_cls = knownBoolNat2 defs
+                       ki      = typeKind (head args2)
+                       args1N  = ki:fn1:args2
+                 , Right (inst,_) <- lookupUniqueInstEnv ienv knN_cls args1N
+                 -> Just (inst,knN_cls,args2,args1N)
+#endif
                  | length args0 == 2
                  , let knN_cls = knownBoolNat2 defs
                        ki      = typeKind (head args0)
@@ -697,12 +715,12 @@ makeOpDict (opCls,dfid) knCls tyArgsC tyArgsI z evArgs
   , Just (_, op_co_rep) <- tcInstNewTyCon_maybe op_tcRep op_args
     -- SNatKn (a+b) ~ Integer
 #if MIN_VERSION_ghc(8,5,0)
-  , let EvExpr dfun_inst = evDFunApp dfid tyArgsI evArgs
+  , EvExpr dfun_inst <- evDFunApp dfid tyArgsI evArgs
 #else
   , let dfun_inst = EvDFunApp dfid tyArgsI evArgs
 #endif
         -- KnownNatAdd a b
-        op_to_kn  = mkTcTransCo (mkTcTransCo op_co_dict op_co_rep)
+  , let op_to_kn  = mkTcTransCo (mkTcTransCo op_co_dict op_co_rep)
                                 (mkTcSymCo (mkTcTransCo kn_co_dict kn_co_rep))
         -- KnownNatAdd a b ~ KnownNat (a+b)
         ev_tm     = mkEvCast dfun_inst op_to_kn
