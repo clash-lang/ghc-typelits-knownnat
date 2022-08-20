@@ -5,6 +5,7 @@
 
 module TestFunctions where
 
+import Data.Kind (Type)
 import Data.Proxy            (Proxy (..))
 import Data.Type.Bool        (If)
 import GHC.TypeLits.KnownNat
@@ -37,6 +38,12 @@ up the corresponding instance of the KnownNat2 class.
 type family Min (a :: Nat) (b :: Nat) :: Nat where
   Min 0 b = 0 -- See [Note: single equation TFs are treated like synonyms]
   Min a b = If (a <=? b) a b
+
+data SNat :: Nat -> Type where
+  SNat :: KnownNat n => SNat n
+
+instance Show (SNat n) where
+  show s@SNat = show (natVal s)
 
 -- Unary functions.
 #if __GLASGOW_HASKELL__ >= 802

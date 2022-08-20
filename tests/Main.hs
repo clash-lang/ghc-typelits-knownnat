@@ -133,12 +133,6 @@ test16 _ _ = natVal (Proxy @(Foo 1 + 7 + Foo 1))
 test17 :: KnownNat (4 + 2 * Foo 1 + Foo 1) => Proxy (Foo 1) -> Proxy (4 + 2 * Foo 1 + Foo 1) -> Number
 test17 _ _ = natVal (Proxy @(2 * Foo 1 + 7 + Foo 1))
 
-data SNat :: Nat -> Type where
-  SNat :: KnownNat n => SNat n
-
-instance Show (SNat n) where
-  show s@SNat = show (natVal s)
-
 addSNat :: SNat a -> SNat b -> SNat (a + b)
 addSNat SNat SNat = SNat
 
@@ -188,6 +182,9 @@ test28 :: forall m n . (KnownNat m, (2*n) ~ m) => Proxy m -> Natural
 test28 _ = natVal @n Proxy
 #endif
 
+test29 :: forall a b . (b ~ (2^a)) => SNat a -> SNat (Log b)
+test29 SNat = SNat @(Log b)
+
 tests :: TestTree
 tests = testGroup "ghc-typelits-natnormalise"
   [ testGroup "Basic functionality"
@@ -229,6 +226,9 @@ tests = testGroup "ghc-typelits-natnormalise"
       show (test28 (Proxy @10)) @?=
       "5"
 #endif
+    , testCase "forall a b . (b ~ (2^a)) => SNat a -> SNat (Log b)" $
+      show (test29 (SNat @0)) @?=
+      "0"
     ],
     testGroup "Implications"
     [ testCase "KnownNat m => KnownNat (m*m); @5" $
