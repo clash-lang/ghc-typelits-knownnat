@@ -87,7 +87,7 @@ library
                        UndecidableInstances
                        ViewPatterns
   build-depends:       base                      >= 4.9      && <5,
-                       ghc                       >= 8.0.1    && <9.6,
+                       ghc                       >= 8.0.1    && <9.8,
                        ghc-prim                  >= 0.4.0.0  && <0.10,
                        ghc-tcplugins-extra       >= 0.3.1,
                        ghc-typelits-natnormalise >= 0.7.1    && <0.8,
@@ -101,7 +101,7 @@ library
     ghc-options:       -Wall
   if impl(ghc >= 8.0) && impl(ghc < 9.4)
     hs-source-dirs:    src-pre-ghc-9.4
-  if impl(ghc >= 9.4) && impl(ghc < 9.6)
+  if impl(ghc >= 9.4) && impl(ghc < 9.8)
     hs-source-dirs:    src-ghc-9.4
   if impl(ghc < 8.2)
     build-depends:     integer-gmp               >= 0.5.1.0
