@@ -120,10 +120,19 @@ import GHC.Core.Predicate
   (EqRel (NomEq), Pred (ClassPred,EqPred), classifyPredType)
 import GHC.Core.TyCo.Rep (Type (..), TyLit (..), UnivCoProvenance (PluginProv))
 import GHC.Core.TyCon (tyConName)
+#if MIN_VERSION_ghc(9,6,0)
+import GHC.Core.Type
+  (PredType, dropForAlls, funResultTy, mkNumLitTy, mkStrLitTy, mkTyConApp,
+   piResultTys, splitFunTys, splitTyConApp_maybe, tyConAppTyCon_maybe, typeKind,
+   irrelevantMult)
+import GHC.Core.TyCo.Compare
+  (eqType)
+#else
 import GHC.Core.Type
   (PredType, dropForAlls, eqType, funResultTy, mkNumLitTy, mkStrLitTy, mkTyConApp,
    piResultTys, splitFunTys, splitTyConApp_maybe, tyConAppTyCon_maybe, typeKind,
    irrelevantMult)
+#endif
 import GHC.Data.FastString (fsLit)
 import GHC.Driver.Plugins (Plugin (..), defaultPlugin, purePlugin)
 import GHC.Tc.Instance.Family (tcInstNewTyCon_maybe)
@@ -131,14 +140,29 @@ import GHC.Tc.Plugin (TcPluginM, tcLookupClass, getInstEnvs, unsafeTcPluginTcM)
 import GHC.Tc.Types (TcPlugin(..), TcPluginSolveResult (..), getPlatform)
 import GHC.Tc.Types.Constraint
   (Ct, ctEvExpr, ctEvidence, ctEvPred, ctLoc, mkNonCanonical)
+#if MIN_VERSION_ghc(9,6,0)
+import GHC.Tc.Types.Evidence
+  (EvTerm (..), EvExpr, EvBindsVar, evDFunApp, mkEvCast)
+import GHC.Plugins
+  (Coercion, mkSymCo, mkTransCo)
+#else
 import GHC.Tc.Types.Evidence
   (EvTerm (..), EvExpr, EvBindsVar, evDFunApp, mkEvCast, mkTcSymCo, mkTcTransCo)
+#endif
 import GHC.Types.Id (idType)
 import GHC.Types.Name (nameModule_maybe, nameOccName)
 import GHC.Types.Name.Occurrence (mkTcOcc, occNameString)
 import GHC.Types.Unique.FM (emptyUFM)
 import GHC.Types.Var (DFunId)
 import GHC.Unit.Module (mkModuleName, moduleName, moduleNameString)
+
+#if MIN_VERSION_ghc(9,6,0)
+mkTcSymCo :: Coercion -> Coercion
+mkTcSymCo = mkSymCo
+
+mkTcTransCo :: Coercion -> Coercion -> Coercion
+mkTcTransCo = mkTransCo
+#endif
 
 -- | Classes and instances from "GHC.TypeLits.KnownNat"
 data KnownNatDefs
