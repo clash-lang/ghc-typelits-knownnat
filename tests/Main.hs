@@ -16,6 +16,9 @@ import Data.Proxy
 import Data.Type.Equality ((:~:)(..))
 #if __GLASGOW_HASKELL__ >= 802
 import GHC.TypeNats
+#if __GLASGOW_HASKELL__ >= 906
+  hiding (type SNat)
+#endif
 import Numeric.Natural
 #else
 import GHC.TypeLits
