@@ -101,7 +101,7 @@ where
 import Control.Arrow ((&&&), first)
 import Control.Monad.Trans.Maybe (MaybeT (..))
 import Control.Monad.Trans.Writer.Strict
-import Data.Maybe (catMaybes,mapMaybe)
+import Data.Maybe (catMaybes, fromMaybe, mapMaybe)
 import GHC.TcPluginM.Extra (lookupModule, lookupName, newWanted, tracePlugin)
 import GHC.TypeLits.Normalise.SOP (SOP (..), Product (..), Symbol (..))
 import GHC.TypeLits.Normalise.Unify (CType (..),normaliseNat,reifySOP)
@@ -113,7 +113,9 @@ import GHC.Builtin.Types.Literals (typeNatAddTyCon, typeNatDivTyCon, typeNatSubT
 import GHC.Builtin.Types (promotedFalseDataCon, promotedTrueDataCon)
 import GHC.Builtin.Types.Literals (typeNatCmpTyCon)
 import GHC.Core.Class (Class, classMethods, className, classTyCon)
-import GHC.Core.Coercion (Role (Representational), mkUnivCo)
+import GHC.Core.Coercion
+  (Coercion, Role (Nominal, Representational), coercionRKind, mkNomReflCo,
+   mkTyConAppCo, mkUnivCo)
 import GHC.Core.InstEnv (instanceDFunId, lookupUniqueInstEnv)
 import GHC.Core.Make (mkNaturalExpr)
 import GHC.Core.Predicate
@@ -142,12 +144,13 @@ import GHC.Tc.Types.Constraint
   (Ct, ctEvExpr, ctEvidence, ctEvPred, ctLoc, mkNonCanonical)
 #if MIN_VERSION_ghc(9,6,0)
 import GHC.Tc.Types.Evidence
-  (EvTerm (..), EvExpr, EvBindsVar, evDFunApp, mkEvCast)
+  (EvTerm (..), EvExpr, EvBindsVar, evDFunApp, mkEvCast, evTermCoercion_maybe)
 import GHC.Plugins
-  (Coercion, mkSymCo, mkTransCo)
+  (mkSymCo, mkTransCo)
 #else
 import GHC.Tc.Types.Evidence
-  (EvTerm (..), EvExpr, EvBindsVar, evDFunApp, mkEvCast, mkTcSymCo, mkTcTransCo)
+  (EvTerm (..), EvExpr, EvBindsVar, evDFunApp, mkEvCast, mkTcSymCo, mkTcTransCo,
+   evTermCoercion_maybe)
 #endif
 import GHC.Types.Id (idType)
 import GHC.Types.Name (nameModule_maybe, nameOccName)
@@ -360,15 +363,15 @@ constraintToEvTerm defs givens (ct,cls,op,orig) = do
                  found@Just {} -> return found
                  -- 3.b If not, we check if the outer type-level operation
                  -- has a corresponding KnownNat<N> instance.
-                 _ -> go op
+                 _ -> go (op,Nothing)
     return ((first (,ct)) <$> evM)
   where
     -- Determine whether the outer type-level operation has a corresponding
     -- KnownNat<N> instance, where /N/ corresponds to the arity of the
     -- type-level operation
-    go :: Type -> TcPluginM (Maybe (EvTerm,[Ct]))
-    go (go_other -> Just ev) = return (Just (ev,[]))
-    go ty@(TyConApp tc args0)
+    go :: (Type, Maybe Coercion) -> TcPluginM (Maybe (EvTerm,[Ct]))
+    go (go_other -> Just ev, _) = return (Just (ev,[]))
+    go (ty@(TyConApp tc args0), sM)
       | let tcNm = tyConName tc
       , Just m <- nameModule_maybe tcNm
       = do
@@ -454,10 +457,10 @@ constraintToEvTerm defs givens (ct,cls,op,orig) = do
                -- follows 'CLog 2 n + 1', the type of the evidence will be
                -- 'KnownNat fsk'; the one GHC originally asked us to solve.
                then return ((,concat new) <$> makeOpDictByFiat df cls args1N args0N (unOrig orig) evs)
-               else return ((,concat new) <$> makeOpDict df cls args1N args0N (unOrig orig) evs)
+               else return ((,concat new) <$> makeOpDict df cls args1N args0N (unOrig orig) evs (fmap (ty,) sM))
           _ -> return ((,[]) <$> go_other ty)
 
-    go (LitTy (NumTyLit i))
+    go ((LitTy (NumTyLit i)), _)
       -- Let GHC solve simple Literal constraints
       | LitTy _ <- op
       = return Nothing
@@ -498,23 +501,30 @@ constraintToEvTerm defs givens (ct,cls,op,orig) = do
                          -> Just ty''
                        _ -> Nothing
           -- Get the rewrites
-          unEq ty' = case classifyPredType ty' of
-                       EqPred NomEq ty1 ty2 -> Just (ty1,ty2)
-                       _ -> Nothing
-          rewrites = mapMaybe (unEq . unCType . fst) givens
+          unEq (ty',ev) = case classifyPredType ty' of
+                            EqPred NomEq ty1 ty2 -> Just (ty1,ty2,ev)
+                            _ -> Nothing
+          rewrites :: [(Type,Type,EvExpr)]
+          rewrites = mapMaybe (unEq . first unCType) givens
           -- Rewrite
-          rewriteTy tyK (ty1,ty2) | ty1 `eqType` tyK = Just ty2
-                                  | ty2 `eqType` tyK = Just ty1
-                                  | otherwise        = Nothing
+          rewriteTy tyK (ty1,ty2,ev)
+            | ty1 `eqType` tyK
+            = Just (ty2,Just (tyK,evTermCoercion_maybe (EvExpr ev)))
+            | ty2 `eqType` tyK
+            = Just (ty1,Just (tyK,fmap mkTcSymCo (evTermCoercion_maybe (EvExpr ev))))
+            | otherwise
+            = Nothing
           -- Get only the [G]iven KnownNat constraints
           knowns   = mapMaybe (unKn . unCType . fst) givens
           -- Get all the rewritten KNs
           knownsR  = catMaybes $ concatMap (\t -> map (rewriteTy t) rewrites) knowns
-          knownsX  = knowns ++ knownsR
+          knownsX :: [(Type, Maybe (Type, Maybe Coercion))]
+          knownsX  = fmap (,Nothing) knowns ++ knownsR
           -- pair up the sum-of-products KnownNat constraints
           -- with the original Nat operation
           subWant  = mkTyConApp typeNatSubTyCon . (:[want])
-          exploded = map (fst . runWriter . normaliseNat . subWant &&& id)
+          -- exploded :: [()]
+          exploded = map (fst . runWriter . normaliseNat . subWant . fst &&& id)
                          knownsX
           -- interesting cases for us are those where
           -- wanted and given only differ by a constant
@@ -523,24 +533,60 @@ constraintToEvTerm defs givens (ct,cls,op,orig) = do
           examineDiff _ _ = Nothing
           interesting = mapMaybe (uncurry examineDiff) exploded
       -- convert the first suitable evidence
-      ((h,corr):_) <- pure interesting
+      (((h,sM),corr):_) <- pure interesting
       x <- case corr of
-                I 0 -> pure h
+                I 0 -> pure (fromMaybe (h,Nothing) sM)
                 I i | i < 0
-                    -> pure (mkTyConApp typeNatAddTyCon [h,mkNumLitTy (negate i)])
+                    , let l1 = mkNumLitTy (negate i)
+                    -> case sM of
+                        Just (q,cM) -> pure
+                          ( mkTyConApp typeNatAddTyCon [q,l1]
+                          , fmap (mkTyConAppCo Nominal typeNatAddTyCon . (:[mkNomReflCo l1])) cM
+                          )
+                        Nothing -> pure
+                          ( mkTyConApp typeNatAddTyCon [h,l1]
+                          , Nothing
+                          )
                     | otherwise
-                    -> pure (mkTyConApp typeNatSubTyCon [h,mkNumLitTy i])
+                    , let l1 = mkNumLitTy i
+                    -> case sM of
+                        Just (q,cM) -> pure
+                          ( mkTyConApp typeNatSubTyCon [q,l1]
+                          , fmap (mkTyConAppCo Nominal typeNatSubTyCon . (:[mkNomReflCo l1])) cM
+                          )
+                        Nothing -> pure
+                          ( mkTyConApp typeNatSubTyCon [h,l1]
+                          , Nothing
+                          )
                 -- If the offset between a given and a wanted is again the wanted
                 -- then the given is twice the wanted; so we can just divide
                 -- the given by two. Only possible in GHC 8.4+; for 8.2 we simply
                 -- fail because we don't know how to divide.
-                c   | CType (reifySOP (S [P [c]])) == CType want ->
-                       pure (mkTyConApp typeNatDivTyCon [h,reifySOP (S [P [I 2]])])
+                c   | CType (reifySOP (S [P [c]])) == CType want
+                    , let l2 = mkNumLitTy 2
+                    -> case sM of
+                        Just (q,cM) -> pure
+                          ( mkTyConApp typeNatDivTyCon [q,l2]
+                          , fmap (mkTyConAppCo Nominal typeNatDivTyCon . (:[mkNomReflCo l2])) cM
+                          )
+                        Nothing -> pure
+                          ( mkTyConApp typeNatDivTyCon [h,l2]
+                          , Nothing
+                          )
                 -- Only solve with a variable offset if we have [G]iven knownnat for it
                 -- Failing to do this check results in #30
-                V v | all (not . eqType (TyVarTy v)) knownsX
-                    -> MaybeT (pure Nothing)
-                _ -> pure (mkTyConApp typeNatSubTyCon [h,reifySOP (S [P [corr]])])
+                V v  | all (not . eqType (TyVarTy v) . fst) knownsX
+                     -> MaybeT (pure Nothing)
+                _    -> let lC = reifySOP (S [P [corr]]) in
+                        case sM of
+                          Just (q,cM) -> pure
+                            ( mkTyConApp typeNatSubTyCon [q,lC]
+                            , fmap (mkTyConAppCo Nominal typeNatSubTyCon . (:[mkNomReflCo lC])) cM
+                            )
+                          Nothing -> pure
+                            ( mkTyConApp typeNatSubTyCon [h,lC]
+                            , Nothing
+                            )
       MaybeT (go x)
 
 makeWantedEv
@@ -585,16 +631,18 @@ makeOpDict
   -- ^ Type of the result
   -> [EvExpr]
   -- ^ Evidence arguments
+  -> Maybe (Type, Coercion)
   -> Maybe EvTerm
-makeOpDict (opCls,dfid) knCls tyArgsC tyArgsI z evArgs
-  | Just (_, kn_co_dict) <- tcInstNewTyCon_maybe (classTyCon knCls) [z]
+makeOpDict (opCls,dfid) knCls tyArgsC tyArgsI z evArgs sM
+  | let z1 = maybe z fst sM
+  , Just (_, kn_co_dict) <- tcInstNewTyCon_maybe (classTyCon knCls) [z1]
     -- KnownNat n ~ SNat n
   , [ kn_meth ] <- classMethods knCls
   , Just kn_tcRep <- tyConAppTyCon_maybe -- SNat
                       $ funResultTy      -- SNat n
                       $ dropForAlls      -- KnownNat n => SNat n
                       $ idType kn_meth   -- forall n. KnownNat n => SNat n
-  , Just (_, kn_co_rep) <- tcInstNewTyCon_maybe kn_tcRep [z]
+  , Just (_, kn_co_rep) <- tcInstNewTyCon_maybe kn_tcRep [z1]
     -- SNat n ~ Integer
   , Just (_, op_co_dict) <- tcInstNewTyCon_maybe (classTyCon opCls) tyArgsC
     -- KnownNatAdd a b ~ SNatKn (a+b)
@@ -610,7 +658,16 @@ makeOpDict (opCls,dfid) knCls tyArgsC tyArgsI z evArgs
   , let op_to_kn  = mkTcTransCo (mkTcTransCo op_co_dict op_co_rep)
                                 (mkTcSymCo (mkTcTransCo kn_co_dict kn_co_rep))
         -- KnownNatAdd a b ~ KnownNat (a+b)
-        ev_tm     = mkEvCast dfun_inst op_to_kn
+  , let op_to_kn1 = case sM of
+          Nothing -> op_to_kn
+          Just (_,rw) ->
+            let kn_co_rw = mkTyConAppCo Representational (classTyCon knCls) [rw]
+                kn_co_co = mkUnivCo (PluginProv "ghc-typelits-knownnat")
+                            Representational
+                              (coercionRKind kn_co_rw)
+                              (mkTyConApp (classTyCon knCls) [z])
+              in mkTcTransCo op_to_kn (mkTcTransCo kn_co_rw kn_co_co)
+  , let ev_tm = mkEvCast dfun_inst op_to_kn1
   = Just ev_tm
   | otherwise
   = Nothing
