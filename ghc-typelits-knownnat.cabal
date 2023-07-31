@@ -54,8 +54,8 @@ extra-source-files:  README.md
                      CHANGELOG.md
 cabal-version:       >=1.10
 tested-with:         GHC == 8.0.2, GHC == 8.2.2, GHC == 8.4.4, GHC == 8.6.5,
-                     GHC == 8.8.4, GHC == 8.10.7, GHC == 9.0.2, GHC == 9.2.6,
-                     GHC == 9.4.4, GHC == 9.6.1
+                     GHC == 8.8.4, GHC == 8.10.7, GHC == 9.0.2, GHC == 9.2.8,
+                     GHC == 9.4.5, GHC == 9.6.2
 
 source-repository head
   type: git
@@ -87,12 +87,12 @@ library
                        UndecidableInstances
                        ViewPatterns
   build-depends:       base                      >= 4.9      && <5,
-                       ghc                       >= 8.0.1    && <9.8,
-                       ghc-prim                  >= 0.4.0.0  && <0.11,
+                       ghc                       >= 8.0.1    && <9.10,
+                       ghc-prim                  >= 0.4.0.0  && <0.12,
                        ghc-tcplugins-extra       >= 0.3.1,
                        ghc-typelits-natnormalise >= 0.7.1    && <0.8,
                        transformers              >= 0.5.2.0  && <0.7,
-                       template-haskell          >= 2.11.0.0 && <2.21
+                       template-haskell          >= 2.11.0.0 && <2.22
   hs-source-dirs:      src
   default-language:    Haskell2010
   if flag(deverror)
@@ -101,7 +101,7 @@ library
     ghc-options:       -Wall
   if impl(ghc >= 8.0) && impl(ghc < 9.4)
     hs-source-dirs:    src-pre-ghc-9.4
-  if impl(ghc >= 9.4) && impl(ghc < 9.8)
+  if impl(ghc >= 9.4) && impl(ghc < 9.10)
     hs-source-dirs:    src-ghc-9.4
   if impl(ghc < 8.2)
     build-depends:     integer-gmp               >= 0.5.1.0

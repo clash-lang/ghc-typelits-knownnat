@@ -387,29 +387,29 @@ constraintToEvTerm defs givens (ct,cls,op,orig) = do
                  -> Just (inst,knN_cls,args0,args1)
                  | fn0 == "Data.Type.Ord.OrdCond"
                  , [_,cmpNat,TyConApp t1 [],TyConApp t2 [],TyConApp f1 []] <- args0
-                 , TyConApp cmpNatTc args2 <- cmpNat
+                 , TyConApp cmpNatTc args2@(arg2:_) <- cmpNat
                  , cmpNatTc == typeNatCmpTyCon
                  , t1 == promotedTrueDataCon
                  , t2 == promotedTrueDataCon
                  , f1 == promotedFalseDataCon
                  , let knN_cls = knownBoolNat2 defs
-                       ki      = typeKind (head args2)
+                       ki      = typeKind arg2
                        args1N  = ki:fn1:args2
                  , Right (inst,_) <- lookupUniqueInstEnv ienv knN_cls args1N
                  -> Just (inst,knN_cls,args2,args1N)
-                 | length args0 == 2
+                 | [arg0,_] <- args0
                  , let knN_cls = knownBoolNat2 defs
-                       ki      = typeKind (head args0)
+                       ki      = typeKind arg0
                        args1N  = ki:args1
                  , Right (inst, _) <- lookupUniqueInstEnv ienv knN_cls args1N
                  -> Just (inst,knN_cls,args0,args1N)
-                 | length args0 == 4
+                 | (arg0:args0Rest) <- args0
+                 , length args0Rest == 3
                  , fn0 == "Data.Type.Bool.If"
-                 , let args0N = tail args0
-                       args1N = head args0:fn1:tail args0
+                 , let args1N = arg0:fn1:args0Rest
                        knN_cls = knownNat2Bool defs
                  , Right (inst, _) <- lookupUniqueInstEnv ienv knN_cls args1N
-                 -> Just (inst,knN_cls,args0N,args1N)
+                 -> Just (inst,knN_cls,args0Rest,args1N)
                  | otherwise
                  -> Nothing
         case instM of
