@@ -173,12 +173,12 @@ class KnownNat3 (f :: Symbol) (a :: Nat) (b :: Nat) (c :: Nat) where
 -- | 'KnownNat2' instance for "GHC.TypeLits"' 'GHC.TypeLits.+'
 instance (KnownNat a, KnownNat b) => KnownNat2 $(nameToSymbol ''(+)) a b where
   natSing2 = SNatKn (natVal (Proxy @a) + natVal (Proxy @b))
-  {-# INLINE natSing2 #-}
+  {-# NOINLINE natSing2 #-}
 
 -- | 'KnownNat2' instance for "GHC.TypeLits"' 'GHC.TypeLits.*'
 instance (KnownNat a, KnownNat b) => KnownNat2 $(nameToSymbol ''(*)) a b where
   natSing2 = SNatKn (natVal (Proxy @a) * natVal (Proxy @b))
-  {-# INLINE natSing2 #-}
+  {-# NOINLINE natSing2 #-}
 
 -- | 'KnownNat2' instance for "GHC.TypeLits"' 'GHC.TypeLits.^'
 instance (KnownNat a, KnownNat b) => KnownNat2 $(nameToSymbol ''(^)) a b where
@@ -188,18 +188,20 @@ instance (KnownNat a, KnownNat b) => KnownNat2 $(nameToSymbol ''(^)) a b where
                        2 -> shiftLNatural 1 (fromIntegral y)
                        _ -> x ^ y
              in  SNatKn z
-  {-# INLINE natSing2 #-}
+  {-# NOINLINE natSing2 #-}
 
 -- | 'KnownNat2' instance for "GHC.TypeLits"' 'GHC.TypeLits.-'
 instance (KnownNat a, KnownNat b, (b <= a) ~ (() :: Constraint)) => KnownNat2 $(nameToSymbol ''(-)) a b where
   natSing2 = SNatKn (natVal (Proxy @a) - natVal (Proxy @b))
-  {-# INLINE natSing2 #-}
+  {-# NOINLINE natSing2 #-}
 
 instance (KnownNat x, KnownNat y, (1 <= y) ~ (() :: Constraint)) => KnownNat2 $(nameToSymbol ''Div) x y where
   natSing2 = SNatKn (quot (natVal (Proxy @x)) (natVal (Proxy @y)))
+  {-# NOINLINE natSing2 #-}
 
 instance (KnownNat x, KnownNat y, (1 <= y) ~ (() :: Constraint)) => KnownNat2 $(nameToSymbol ''Mod) x y where
   natSing2 = SNatKn (rem (natVal (Proxy @x)) (natVal (Proxy @y)))
+  {-# NOINLINE natSing2 #-}
 
 -- | Singleton version of 'Bool'
 data SBool (b :: Bool) where
@@ -256,11 +258,11 @@ class KnownBoolNat2 (f :: Symbol) (a :: k) (b :: k) where
 
 instance (KnownNat a, KnownNat b) => KnownBoolNat2 $(nameToSymbol ''(<=?)) a b where
   boolNatSing2 = SBoolKb (natVal (Proxy @a) <= natVal (Proxy @b))
-  {-# INLINE boolNatSing2 #-}
+  {-# NOINLINE boolNatSing2 #-}
 
 instance (KnownNat a, KnownNat b) => KnownBoolNat2 $(nameToSymbol ''OrdCond) a b where
   boolNatSing2 = SBoolKb (natVal (Proxy @a) <= natVal (Proxy @b))
-  {-# INLINE boolNatSing2 #-}
+  {-# NOINLINE boolNatSing2 #-}
 
 -- | Class for ternary functions with a Natural result.
 --
@@ -272,3 +274,4 @@ class KnownNat2Bool (f :: Symbol) (a :: Bool) (b :: k) (c :: k) where
 
 instance (KnownBool a, KnownNat b, KnownNat c) => KnownNat2Bool $(nameToSymbol ''If) a b c where
   natBoolSing3 = SNatKn (if boolVal (Proxy @a) then natVal (Proxy @b) else natVal (Proxy @c))
+  {-# NOINLINE natBoolSing3 #-}
