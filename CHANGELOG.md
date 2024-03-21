@@ -1,5 +1,8 @@
 # Changelog for the [`ghc-typelits-knownnat`](http://hackage.haskell.org/package/ghc-typelits-knownnat) package
 
+## 0.7.11
+* Fix infinite loop between plugin and solver pipeline
+
 ## 0.7.10 *November 14th 2023*
 * Work around [GHC issue 23109](https://gitlab.haskell.org/ghc/ghc/-/issues/23109)
 
