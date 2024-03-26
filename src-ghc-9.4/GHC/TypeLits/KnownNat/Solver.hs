@@ -493,6 +493,7 @@ constraintToEvTerm defs givens (ct,cls,op,orig) = do
     -- Find a known constraint for a wanted, so that (modulo normalization)
     -- the two are a constant offset apart.
     offset :: Type -> TcPluginM (Maybe (EvTerm,[Ct]))
+    offset LitTy{} = pure Nothing
     offset want = runMaybeT $ do
       let -- Get the knownnat contraints
           unKn ty' = case classifyPredType ty' of
