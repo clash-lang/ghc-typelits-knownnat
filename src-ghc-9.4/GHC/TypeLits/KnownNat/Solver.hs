@@ -88,7 +88,7 @@ Pragma to the header of your file.
 {-# LANGUAGE LambdaCase    #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE ViewPatterns  #-}
-
+{-# LANGUAGE TemplateHaskellQuotes #-}
 {-# LANGUAGE Trustworthy   #-}
 
 {-# OPTIONS_HADDOCK show-extensions #-}
@@ -102,7 +102,9 @@ import Control.Arrow ((&&&), first)
 import Control.Monad.Trans.Maybe (MaybeT (..))
 import Control.Monad.Trans.Writer.Strict
 import Data.Maybe (catMaybes, fromMaybe, mapMaybe)
-import GHC.TcPluginM.Extra (lookupModule, lookupName, newWanted, tracePlugin)
+import Data.Type.Ord (OrdCond)
+import Data.Type.Bool (If)
+import GHC.TcPluginM.Extra (newWanted, tracePlugin)
 import GHC.TypeLits.Normalise.SOP (SOP (..), Product (..), Symbol (..))
 import GHC.TypeLits.Normalise.Unify (CType (..),normaliseNat,reifySOP)
 
@@ -138,8 +140,8 @@ import GHC.Core.Type
 import GHC.Data.FastString (fsLit)
 import GHC.Driver.Plugins (Plugin (..), defaultPlugin, purePlugin)
 import GHC.Tc.Instance.Family (tcInstNewTyCon_maybe)
-import GHC.Tc.Plugin (TcPluginM, tcLookupClass, getInstEnvs, unsafeTcPluginTcM)
-import GHC.Tc.Types (TcPlugin(..), TcPluginSolveResult (..), getPlatform)
+import GHC.Tc.Plugin (TcPluginM, tcLookupClass, getInstEnvs, unsafeTcPluginTcM, tcPluginIO, tcLookupTyCon)
+import GHC.Tc.Types (TcPlugin(..), TcPluginSolveResult (..), getPlatform, env_top)
 import GHC.Tc.Types.Constraint
   (Ct, ctEvExpr, ctEvidence, ctEvPred, ctLoc, mkNonCanonical)
 #if MIN_VERSION_ghc(9,6,0)
@@ -153,11 +155,16 @@ import GHC.Tc.Types.Evidence
    evTermCoercion_maybe)
 #endif
 import GHC.Types.Id (idType)
-import GHC.Types.Name (nameModule_maybe, nameOccName)
-import GHC.Types.Name.Occurrence (mkTcOcc, occNameString)
+import GHC.Types.Name (nameModule_maybe, nameOccName, Name)
+import GHC.Types.Name.Occurrence (occNameString)
 import GHC.Types.Unique.FM (emptyUFM)
 import GHC.Types.Var (DFunId)
-import GHC.Unit.Module (mkModuleName, moduleName, moduleNameString)
+import GHC.Unit.Module (moduleName, moduleNameString)
+import qualified Language.Haskell.TH as TH
+import GHC.Plugins (thNameToGhcNameIO, TyCon)
+import GHC.Driver.Env (hsc_NC)
+import GHC.Data.IOEnv (getEnv)
+import GHC.TypeLits.KnownNat
 
 #if MIN_VERSION_ghc(9,6,0)
 mkTcSymCo :: Coercion -> Coercion
@@ -174,6 +181,8 @@ data KnownNatDefs
   , knownBoolNat2 :: Class
   , knownNat2Bool :: Class
   , knownNatN     :: Int -> Maybe Class -- ^ KnownNat{N}
+  , ordCondTyCon  :: TyCon
+  , ifTyCon       :: TyCon
   }
 
 -- | Simple newtype wrapper to distinguish the original (flattened) argument of
@@ -322,13 +331,14 @@ toGivenEntry ct = let ct_ev = ctEvidence ct
 -- | Find the \"magic\" classes and instances in "GHC.TypeLits.KnownNat"
 lookupKnownNatDefs :: TcPluginM KnownNatDefs
 lookupKnownNatDefs = do
-    md     <- lookupModule myModule myPackage
-    kbC    <- look md "KnownBool"
-    kbn2C  <- look md "KnownBoolNat2"
-    kn2bC  <- look md "KnownNat2Bool"
-    kn1C   <- look md "KnownNat1"
-    kn2C   <- look md "KnownNat2"
-    kn3C   <- look md "KnownNat3"
+    kbC    <- look ''KnownBool
+    kbn2C  <- look ''KnownBoolNat2
+    kn2bC  <- look ''KnownNat2Bool
+    kn1C   <- look ''KnownNat1
+    kn2C   <- look ''KnownNat2
+    kn3C   <- look ''KnownNat3
+    ordcond <- lookupTHName ''OrdCond >>= tcLookupTyCon
+    ifTc <- lookupTHName ''If >>= tcLookupTyCon
     return KnownNatDefs
            { knownBool     = kbC
            , knownBoolNat2 = kbn2C
@@ -338,14 +348,17 @@ lookupKnownNatDefs = do
                                    ; 3 -> Just kn3C
                                    ; _ -> Nothing
                                    }
+           , ordCondTyCon  = ordcond
+           , ifTyCon       = ifTc
            }
   where
-    look md s = do
-      nm   <- lookupName md (mkTcOcc s)
-      tcLookupClass nm
+    look nm = lookupTHName nm >>= tcLookupClass
 
-    myModule  = mkModuleName "GHC.TypeLits.KnownNat"
-    myPackage = fsLit "ghc-typelits-knownnat"
+lookupTHName :: TH.Name -> TcPluginM Name
+lookupTHName th = do
+    nc <- unsafeTcPluginTcM (hsc_NC . env_top <$> getEnv)
+    res <- tcPluginIO $ thNameToGhcNameIO nc th
+    maybe (fail $ "Failed to lookup " ++ show th) return res
 
 -- | Try to create evidence for a wanted constraint
 constraintToEvTerm
@@ -385,7 +398,7 @@ constraintToEvTerm defs givens (ct,cls,op,orig) = do
               () | Just knN_cls    <- knownNatN defs (length args0)
                  , Right (inst, _) <- lookupUniqueInstEnv ienv knN_cls args1
                  -> Just (inst,knN_cls,args0,args1)
-                 | fn0 == "Data.Type.Ord.OrdCond"
+                 | tc == ordCondTyCon defs
                  , [_,cmpNat,TyConApp t1 [],TyConApp t2 [],TyConApp f1 []] <- args0
                  , TyConApp cmpNatTc args2@(arg2:_) <- cmpNat
                  , cmpNatTc == typeNatCmpTyCon
@@ -405,7 +418,7 @@ constraintToEvTerm defs givens (ct,cls,op,orig) = do
                  -> Just (inst,knN_cls,args0,args1N)
                  | (arg0:args0Rest) <- args0
                  , length args0Rest == 3
-                 , fn0 == "Data.Type.Bool.If"
+                 , tc == ifTyCon defs
                  , let args1N = arg0:fn1:args0Rest
                        knN_cls = knownNat2Bool defs
                  , Right (inst, _) <- lookupUniqueInstEnv ienv knN_cls args1N
