@@ -154,6 +154,9 @@ import GHC.Tc.Types.Evidence
   (EvTerm (..), EvExpr, EvBindsVar, evDFunApp, mkEvCast, mkTcSymCo, mkTcTransCo,
    evTermCoercion_maybe)
 #endif
+#if MIN_VERSION_ghc(9,11,0)
+import GHC.Plugins (emptyDVarSet)
+#endif
 import GHC.Types.Id (idType)
 import GHC.Types.Name (nameModule_maybe, nameOccName, Name)
 import GHC.Types.Name.Occurrence (occNameString)
@@ -676,7 +679,11 @@ makeOpDict (opCls,dfid) knCls tyArgsC tyArgsI z evArgs sM
           Nothing -> op_to_kn
           Just (_,rw) ->
             let kn_co_rw = mkTyConAppCo Representational (classTyCon knCls) [rw]
+#if MIN_VERSION_ghc(9,11,0)
+                kn_co_co = mkUnivCo (PluginProv "ghc-typelits-knownnat" emptyDVarSet)
+#else
                 kn_co_co = mkUnivCo (PluginProv "ghc-typelits-knownnat")
+#endif
                             Representational
                               (coercionRKind kn_co_rw)
                               (mkTyConApp (classTyCon knCls) [z])
@@ -792,7 +799,11 @@ makeOpDictByFiat (opCls,dfid) knCls tyArgsC tyArgsI z evArgs
                        $ dropForAlls     -- KnownBool b => SBool b
                        $ idType kn_meth  -- forall b. KnownBool b => SBool b
     -- SBool b R~ Bool (The "Lie")
+#if MIN_VERSION_ghc(9,11,0)
+  , let kn_co_rep = mkUnivCo (PluginProv "ghc-typelits-knownnat" emptyDVarSet)
+#else
   , let kn_co_rep = mkUnivCo (PluginProv "ghc-typelits-knownnat")
+#endif
                              Representational
                              (mkTyConApp kn_tcRep [z]) boolTy
     -- KnownBoolNat2 f a b ~ SBool f
