@@ -676,7 +676,11 @@ makeOpDict (opCls,dfid) knCls tyArgsC tyArgsI z evArgs sM
           Nothing -> op_to_kn
           Just (_,rw) ->
             let kn_co_rw = mkTyConAppCo Representational (classTyCon knCls) [rw]
+#if MIN_VERSION_ghc(9,11,0)
+                kn_co_co = mkUnivCo (PluginProv "ghc-typelits-knownnat") []
+#else
                 kn_co_co = mkUnivCo (PluginProv "ghc-typelits-knownnat")
+#endif
                             Representational
                               (coercionRKind kn_co_rw)
                               (mkTyConApp (classTyCon knCls) [z])
@@ -792,7 +796,11 @@ makeOpDictByFiat (opCls,dfid) knCls tyArgsC tyArgsI z evArgs
                        $ dropForAlls     -- KnownBool b => SBool b
                        $ idType kn_meth  -- forall b. KnownBool b => SBool b
     -- SBool b R~ Bool (The "Lie")
+#if MIN_VERSION_ghc(9,11,0)
+  , let kn_co_rep = mkUnivCo (PluginProv "ghc-typelits-knownnat") []
+#else
   , let kn_co_rep = mkUnivCo (PluginProv "ghc-typelits-knownnat")
+#endif
                              Representational
                              (mkTyConApp kn_tcRep [z]) boolTy
     -- KnownBoolNat2 f a b ~ SBool f
