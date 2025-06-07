@@ -85,7 +85,9 @@ Pragma to the header of your file.
 -}
 
 {-# LANGUAGE CPP           #-}
+{-# LANGUAGE DataKinds     #-}
 {-# LANGUAGE LambdaCase    #-}
+{-# LANGUAGE TemplateHaskellQuotes #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE ViewPatterns  #-}
 
@@ -102,8 +104,6 @@ import Control.Arrow                ((&&&), first)
 import Control.Monad.Trans.Maybe    (MaybeT (..))
 import Control.Monad.Trans.Writer.Strict
 import Data.Maybe                   (catMaybes,mapMaybe)
-import GHC.TcPluginM.Extra          (lookupModule, lookupName, newWanted,
-                                     tracePlugin)
 #if MIN_VERSION_ghc(8,4,0)
 import GHC.TcPluginM.Extra          (flattenGivens, mkSubst', substType)
 #endif
@@ -119,33 +119,26 @@ import GHC.Builtin.Types.Literals (typeNatAddTyCon, typeNatDivTyCon, typeNatSubT
 import GHC.Builtin.Types (promotedFalseDataCon, promotedTrueDataCon)
 import GHC.Builtin.Types.Literals (typeNatCmpTyCon)
 #endif
-import GHC.Core.Class (Class, classMethods, className, classTyCon)
-import GHC.Core.Coercion (Role (Representational), mkUnivCo)
+import GHC.Core.Class (classMethods)
 import GHC.Core.InstEnv (instanceDFunId, lookupUniqueInstEnv)
 import GHC.Core.Make (mkNaturalExpr)
-import GHC.Core.Predicate
-  (EqRel (NomEq), Pred (ClassPred,EqPred), classifyPredType)
 import GHC.Core.TyCo.Rep (Type (..), TyLit (..), UnivCoProvenance (PluginProv))
-import GHC.Core.TyCon (tyConName)
 import GHC.Core.Type
-  (PredType, dropForAlls, eqType, funResultTy, mkNumLitTy, mkStrLitTy, mkTyConApp,
-   piResultTys, splitFunTys, splitTyConApp_maybe, tyConAppTyCon_maybe, typeKind,
+  (dropForAlls, funResultTy,
+   piResultTys, splitFunTys,
    irrelevantMult)
-import GHC.Data.FastString (fsLit)
 import GHC.Driver.Plugins (Plugin (..), defaultPlugin, purePlugin)
 import GHC.Tc.Instance.Family (tcInstNewTyCon_maybe)
-import GHC.Tc.Plugin (TcPluginM, tcLookupClass, getInstEnvs)
-import GHC.Tc.Types (TcPlugin(..), TcPluginResult (..))
 import GHC.Tc.Types.Constraint
-  (Ct, ctEvExpr, ctEvidence, ctEvLoc, ctEvPred, ctLoc, ctLocSpan, isWanted,
-   mkNonCanonical, setCtLoc, setCtLocSpan)
+  (ctLocSpan, 
+   setCtLoc, setCtLocSpan)
 import GHC.Tc.Types.Evidence
-  (EvTerm (..), EvExpr, evDFunApp, mkEvCast, mkTcSymCo, mkTcTransCo)
+  (mkEvCast, mkTcSymCo, mkTcTransCo)
 import GHC.Types.Id (idType)
 import GHC.Types.Name (nameModule_maybe, nameOccName)
-import GHC.Types.Name.Occurrence (mkTcOcc, occNameString)
+import GHC.Types.Name.Occurrence (occNameString)
 import GHC.Types.Var (DFunId)
-import GHC.Unit.Module (mkModuleName, moduleName, moduleNameString)
+import GHC.Unit.Module (moduleName, moduleNameString)
 #else
 import Class      (Class, classMethods, className, classTyCon)
 #if MIN_VERSION_ghc(8,6,0)
@@ -212,6 +205,8 @@ import TcRnTypes (ctEvTerm)
 #endif
 #endif
 #endif
+import GHC.TcPlugin.API
+import GHC.TypeLits.KnownNat
 
 -- | Classes and instances from "GHC.TypeLits.KnownNat"
 data KnownNatDefs
@@ -318,23 +313,24 @@ Pragma to the header of your file.
 plugin :: Plugin
 plugin
   = defaultPlugin
-  { tcPlugin = const $ Just normalisePlugin
+  { tcPlugin = const $ Just $ mkTcPlugin normalisePlugin
 #if MIN_VERSION_ghc(8,6,0)
   , pluginRecompile = purePlugin
 #endif
   }
 
 normalisePlugin :: TcPlugin
-normalisePlugin = tracePlugin "ghc-typelits-knownnat"
+normalisePlugin =
   TcPlugin { tcPluginInit  = lookupKnownNatDefs
            , tcPluginSolve = solveKnownNat
+           , tcPluginRewrite = const emptyUFM
            , tcPluginStop  = const (return ())
            }
 
-solveKnownNat :: KnownNatDefs -> [Ct] -> [Ct] -> [Ct]
-              -> TcPluginM TcPluginResult
-solveKnownNat _defs _givens _deriveds []      = return (TcPluginOk [] [])
-solveKnownNat defs  givens  _deriveds wanteds = do
+solveKnownNat :: KnownNatDefs -> [Ct] -> [Ct]
+              -> TcPluginM 'Solve TcPluginSolveResult
+solveKnownNat _defs _givens []      = return (TcPluginOk [] [])
+solveKnownNat defs  givens  wanteds = do
   -- GHC 7.10 puts deriveds with the wanteds, so filter them out
   let wanteds'   = filter (isWanted . ctEvidence) wanteds
 #if MIN_VERSION_ghc(8,4,0)
@@ -384,15 +380,14 @@ toGivenEntry ct = let ct_ev = ctEvidence ct
                   in  (CType c_ty,ev)
 
 -- | Find the \"magic\" classes and instances in "GHC.TypeLits.KnownNat"
-lookupKnownNatDefs :: TcPluginM KnownNatDefs
+lookupKnownNatDefs :: TcPluginM 'Init KnownNatDefs
 lookupKnownNatDefs = do
-    md     <- lookupModule myModule myPackage
-    kbC    <- look md "KnownBool"
-    kbn2C  <- look md "KnownBoolNat2"
-    kn2bC  <- look md "KnownNat2Bool"
-    kn1C   <- look md "KnownNat1"
-    kn2C   <- look md "KnownNat2"
-    kn3C   <- look md "KnownNat3"
+    kbC <- lookupTHName ''KnownBool >>= tcLookupClass
+    kbn2C  <- lookupTHName ''KnownBoolNat2 >>= tcLookupClass
+    kn2bC  <- lookupTHName ''KnownNat2Bool >>= tcLookupClass
+    kn1C   <- lookupTHName ''KnownNat1 >>= tcLookupClass
+    kn2C   <- lookupTHName ''KnownNat2 >>= tcLookupClass
+    kn3C   <- lookupTHName ''KnownNat3 >>= tcLookupClass
     return KnownNatDefs
            { knownBool     = kbC
            , knownBoolNat2 = kbn2C
@@ -403,13 +398,6 @@ lookupKnownNatDefs = do
                                    ; _ -> Nothing
                                    }
            }
-  where
-    look md s = do
-      nm   <- lookupName md (mkTcOcc s)
-      tcLookupClass nm
-
-    myModule  = mkModuleName "GHC.TypeLits.KnownNat"
-    myPackage = fsLit "ghc-typelits-knownnat"
 
 -- | Try to create evidence for a wanted constraint
 constraintToEvTerm
@@ -422,7 +410,7 @@ constraintToEvTerm
   -- All the [G]iven constraints
 
   -> KnConstraint
-  -> TcPluginM (Maybe ((EvTerm,Ct),[Ct]))
+  -> TcPluginM 'Solve (Maybe ((EvTerm,Ct),[Ct]))
 constraintToEvTerm defs givens (ct,cls,op,orig) = do
     -- 1. Determine if we are an offset apart from a [G]iven constraint
     offsetM <- offset op
@@ -437,7 +425,7 @@ constraintToEvTerm defs givens (ct,cls,op,orig) = do
     -- Determine whether the outer type-level operation has a corresponding
     -- KnownNat<N> instance, where /N/ corresponds to the arity of the
     -- type-level operation
-    go :: Type -> TcPluginM (Maybe (EvTerm,[Ct]))
+    go :: Type -> TcPluginM 'Solve (Maybe (EvTerm,[Ct]))
     go (go_other -> Just ev) = return (Just (ev,[]))
     go ty@(TyConApp tc args0)
       | let tcNm = tyConName tc
@@ -551,9 +539,9 @@ constraintToEvTerm defs givens (ct,cls,op,orig) = do
     -- Get EvTerm arguments for type-level operations. If they do not exist
     -- as [G]iven constraints, then generate new [W]anted constraints
 #if MIN_VERSION_ghc(8,5,0)
-    go_arg :: PredType -> TcPluginM (EvExpr,[Ct])
+    go_arg :: PredType -> TcPluginM 'Solve (EvExpr,[Ct])
 #else
-    go_arg :: PredType -> TcPluginM (EvTerm,[Ct])
+    go_arg :: PredType -> TcPluginM 'Solve (EvTerm,[Ct])
 #endif
     go_arg ty = case lookup (CType ty) givens of
       Just ev -> return (ev,[])
@@ -578,7 +566,7 @@ constraintToEvTerm defs givens (ct,cls,op,orig) = do
 
     -- Find a known constraint for a wanted, so that (modulo normalization)
     -- the two are a constant offset apart.
-    offset :: Type -> TcPluginM (Maybe (EvTerm,[Ct]))
+    offset :: Type -> TcPluginM 'Solve (Maybe (EvTerm,[Ct]))
     offset LitTy{} = pure Nothing
     offset want = runMaybeT $ do
       let -- Get the knownnat contraints
@@ -641,9 +629,9 @@ makeWantedEv
   :: Ct
   -> Type
 #if MIN_VERSION_ghc(8,5,0)
-  -> TcPluginM (EvExpr,Ct)
+  -> TcPluginM 'Solve (EvExpr,Ct)
 #else
-  -> TcPluginM (EvTerm,Ct)
+  -> TcPluginM 'Solve (EvTerm,Ct)
 #endif
 makeWantedEv ct ty = do
   -- Create a new wanted constraint
@@ -716,7 +704,7 @@ makeOpDict (opCls,dfid) knCls tyArgsC tyArgsI z evArgs
   , Just (_, op_co_rep) <- tcInstNewTyCon_maybe op_tcRep op_args
     -- SNatKn (a+b) ~ Integer
 #if MIN_VERSION_ghc(8,5,0)
-  , EvExpr dfun_inst <- evDFunApp dfid tyArgsI evArgs
+  , dfun_inst <- evDFunApp dfid tyArgsI evArgs
 #else
   , let dfun_inst = EvDFunApp dfid tyArgsI evArgs
 #endif
@@ -779,7 +767,7 @@ makeKnCoercion knCls x z xEv
 --     Integer -> SNat n     -- representation of literal to singleton
 --     SNat n  -> KnownNat n -- singleton to dictionary
 #if MIN_VERSION_ghc(8,5,0)
-makeLitDict :: Class -> Type -> Integer -> TcPluginM (Maybe EvTerm)
+makeLitDict :: Class -> Type -> Integer -> TcPluginM 'Solve (Maybe EvTerm)
 #else
 makeLitDict :: Class -> Type -> Integer -> Maybe EvTerm
 #endif
@@ -870,7 +858,7 @@ makeOpDictByFiat (opCls,dfid) knCls tyArgsC tyArgsI z evArgs
                                  $ idType op_meth         -- forall f x y . KnownBoolNat2 f a b => SBoolf f
     -- SBoolF f ~ Bool
   , Just (_, op_co_rep) <- tcInstNewTyCon_maybe op_tcRep op_args
-  , EvExpr dfun_inst <- evDFunApp dfid tyArgsI evArgs
+  , dfun_inst <- evDFunApp dfid tyArgsI evArgs
     -- KnownBoolNat2 f x y ~ KnownBool b
   , let op_to_kn  = mkTcTransCo (mkTcTransCo op_co_dict op_co_rep)
                                 (mkTcSymCo (mkTcTransCo kn_co_dict kn_co_rep))
