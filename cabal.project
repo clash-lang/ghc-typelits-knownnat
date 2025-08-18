@@ -1,4 +1,4 @@
-packages: ./ghc-typelits-knownnat.cabal
+packages: .
 
 package ghc-typelits-knownnat
     flags: +deverror
