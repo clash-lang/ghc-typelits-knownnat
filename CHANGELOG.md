@@ -1,5 +1,9 @@
 # Changelog for the [`ghc-typelits-knownnat`](http://hackage.haskell.org/package/ghc-typelits-knownnat) package
 
+## 0.8.0
+* Support for GHC 9.14.1.
+* Drop support for GHC 8.0, 8.2, 8.4, 8.6.
+
 ## 0.7.13 *March 4th 2025*
 * Support for GHC 9.12.1
 

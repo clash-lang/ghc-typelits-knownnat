@@ -82,26 +82,24 @@ type family Max (a :: Nat) (b :: Nat) :: Nat where
 @
 -}
 
-{-# LANGUAGE AllowAmbiguousTypes   #-}
 {-# LANGUAGE CPP                   #-}
+
+{-# LANGUAGE AllowAmbiguousTypes   #-}
+{-# LANGUAGE BangPatterns          #-}
 {-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE KindSignatures        #-}
 {-# LANGUAGE MagicHash             #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE NoStarIsType          #-}
 {-# LANGUAGE PolyKinds             #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TemplateHaskell       #-}
 {-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeOperators         #-}
 {-# LANGUAGE TypeFamilies          #-}
-#if MIN_VERSION_ghc(8,6,0)
-{-# LANGUAGE NoStarIsType #-}
-#endif
-#if !MIN_VERSION_ghc(8,2,0)
-{-# LANGUAGE BangPatterns #-}
-#endif
+{-# LANGUAGE UndecidableInstances  #-}
 
 {-# LANGUAGE Trustworthy #-}
 
@@ -129,44 +127,39 @@ module GHC.TypeLits.KnownNat
   )
 where
 
-#if MIN_VERSION_ghc(8,6,0)
-import GHC.Natural            (shiftLNatural)
-#elif MIN_VERSION_ghc(8,2,0)
-import Data.Bits              (shiftL)
-#else
-import GHC.Int                (Int (..))
-import GHC.Integer            (shiftLInteger)
-#endif
-import Data.Proxy             (Proxy (..))
-import Data.Type.Bool         (If)
-import GHC.Prim               (Proxy#)
-#if MIN_VERSION_ghc(8,2,0)
-import GHC.TypeNats
-  (KnownNat, Nat, type (+), type (*), type (^), type (-), type (<=?), type (<=),
-   natVal)
-#if MIN_VERSION_base(4,11,0)
-import GHC.TypeNats           (Div, Mod)
-#endif
-import GHC.TypeLits           (Symbol)
-import Numeric.Natural        (Natural)
-#else
+-- base
+import Data.Proxy
+  ( Proxy (..) )
+import Data.Type.Bool
+  ( If )
+import GHC.Exts
+  ( Proxy# )
 import GHC.TypeLits
-  (KnownNat, Nat, Symbol, type (+), type (*), type (^), type (-), type (<=?),
-   type (<=), natVal)
-#endif
-#if MIN_VERSION_base(4,16,0)
-import Data.Type.Ord (OrdCond)
+  ( Symbol )
+import GHC.TypeNats
+  ( KnownNat, Nat
+  , type (+), type (*), type (^), type (-), type (<=?), type (<=)
+  , type Mod, type Div
+  , natVal
+  )
+import Numeric.Natural
+  ( Natural )
+#if MIN_VERSION_ghc(9,1,0)
+import Data.Type.Ord
+  ( OrdCond )
 #endif
 
+-- ghc
+import GHC.Natural
+  ( shiftLNatural )
+
+-- ghc-typelits-knownnat
 import GHC.TypeLits.KnownNat.TH
 
+--------------------------------------------------------------------------------
+
 -- | Singleton natural number
-newtype SNatKn (f :: Symbol) =
-#if MIN_VERSION_ghc(8,2,0)
-  SNatKn Natural
-#else
-  SNatKn Integer
-#endif
+newtype SNatKn (f :: Symbol) = SNatKn Natural
 
 -- | Class for arithmetic functions with /one/ argument.
 --
@@ -195,43 +188,35 @@ class KnownNat3 (f :: Symbol) (a :: Nat) (b :: Nat) (c :: Nat) where
 -- | 'KnownNat2' instance for "GHC.TypeLits"' 'GHC.TypeLits.+'
 instance (KnownNat a, KnownNat b) => KnownNat2 $(nameToSymbol ''(+)) a b where
   natSing2 = SNatKn (natVal (Proxy @a) + natVal (Proxy @b))
-  {-# INLINE natSing2 #-}
+  {-# NOINLINE natSing2 #-}
 
 -- | 'KnownNat2' instance for "GHC.TypeLits"' 'GHC.TypeLits.*'
 instance (KnownNat a, KnownNat b) => KnownNat2 $(nameToSymbol ''(*)) a b where
   natSing2 = SNatKn (natVal (Proxy @a) * natVal (Proxy @b))
-  {-# INLINE natSing2 #-}
+  {-# NOINLINE natSing2 #-}
 
 -- | 'KnownNat2' instance for "GHC.TypeLits"' 'GHC.TypeLits.^'
 instance (KnownNat a, KnownNat b) => KnownNat2 $(nameToSymbol ''(^)) a b where
   natSing2 = let x = natVal (Proxy @a)
                  y = natVal (Proxy @b)
                  z = case x of
-                       2 ->
-#if MIN_VERSION_ghc(8,6,0)
-                        shiftLNatural 1 (fromIntegral y)
-#elif MIN_VERSION_ghc(8,2,0)
-                        shiftL 1 (fromIntegral y)
-#else
-                        let !(I# y#) = fromIntegral y
-                        in  shiftLInteger 1 y#
-#endif
+                       2 -> shiftLNatural 1 (fromIntegral y)
                        _ -> x ^ y
              in  SNatKn z
-  {-# INLINE natSing2 #-}
+  {-# NOINLINE natSing2 #-}
 
 -- | 'KnownNat2' instance for "GHC.TypeLits"' 'GHC.TypeLits.-'
 instance (KnownNat a, KnownNat b, b <= a) => KnownNat2 $(nameToSymbol ''(-)) a b where
   natSing2 = SNatKn (natVal (Proxy @a) - natVal (Proxy @b))
-  {-# INLINE natSing2 #-}
+  {-# NOINLINE natSing2 #-}
 
-#if MIN_VERSION_base(4,11,0)
 instance (KnownNat x, KnownNat y, 1 <= y) => KnownNat2 $(nameToSymbol ''Div) x y where
   natSing2 = SNatKn (quot (natVal (Proxy @x)) (natVal (Proxy @y)))
+  {-# NOINLINE natSing2 #-}
 
 instance (KnownNat x, KnownNat y, 1 <= y) => KnownNat2 $(nameToSymbol ''Mod) x y where
   natSing2 = SNatKn (rem (natVal (Proxy @x)) (natVal (Proxy @y)))
-#endif
+  {-# NOINLINE natSing2 #-}
 
 -- | Singleton version of 'Bool'
 data SBool (b :: Bool) where
@@ -288,12 +273,12 @@ class KnownBoolNat2 (f :: Symbol) (a :: k) (b :: k) where
 
 instance (KnownNat a, KnownNat b) => KnownBoolNat2 $(nameToSymbol ''(<=?)) a b where
   boolNatSing2 = SBoolKb (natVal (Proxy @a) <= natVal (Proxy @b))
-  {-# INLINE boolNatSing2 #-}
+  {-# NOINLINE boolNatSing2 #-}
 
-#if MIN_VERSION_base(4,16,0)
+#if MIN_VERSION_ghc(9,1,0)
 instance (KnownNat a, KnownNat b) => KnownBoolNat2 $(nameToSymbol ''OrdCond) a b where
   boolNatSing2 = SBoolKb (natVal (Proxy @a) <= natVal (Proxy @b))
-  {-# INLINE boolNatSing2 #-}
+  {-# NOINLINE boolNatSing2 #-}
 #endif
 
 -- | Class for ternary functions with a Natural result.
@@ -306,3 +291,4 @@ class KnownNat2Bool (f :: Symbol) (a :: Bool) (b :: k) (c :: k) where
 
 instance (KnownBool a, KnownNat b, KnownNat c) => KnownNat2Bool $(nameToSymbol ''If) a b c where
   natBoolSing3 = SNatKn (if boolVal (Proxy @a) then natVal (Proxy @b) else natVal (Proxy @c))
+  {-# NOINLINE natBoolSing3 #-}
