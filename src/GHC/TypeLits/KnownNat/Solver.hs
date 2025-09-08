@@ -156,7 +156,7 @@ import GHC.Core.TyCo.Rep
 import GHC.Core.TyCo.Subst
   ( substTyWithUnchecked )
 import GHC.Core.Type
-  ( piResultTys, splitFunTys )
+  ( coreView, piResultTys, splitFunTys )
 import GHC.Core.Utils
   ( exprType, mkCast )
 import GHC.Driver.Plugins
@@ -346,6 +346,7 @@ constraintToEvTerm defs givensTyConSubst givens (ct,cls,op,orig) = do
     -- KnownNat<N> instance, where /N/ corresponds to the arity of the
     -- type-level operation
     go :: (Type, Maybe Coercion) -> TcPluginM Solve (Maybe (EvTerm,[Ct]))
+    go (coreView -> Just tyN, coM) = go (tyN, coM)
     go (go_other -> Just ev, _) = return (Just (ev,[]))
     go (ty@(TyConApp tc args0), sM)
       | let tcNm = tyConName tc

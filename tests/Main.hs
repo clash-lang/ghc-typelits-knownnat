@@ -191,6 +191,16 @@ test28 :: forall m n . (KnownNat m, (2*n) ~ m) => Proxy m -> Natural
 test28 _ = natVal @n Proxy
 #endif
 
+type Bar (x::Nat) = x
+type NatTimes2 (x :: Nat) = Bar (x * 2)
+
+data Vec (n::Nat) a
+repeatV :: KnownNat n => a -> Vec n a
+repeatV = undefined
+
+test29 :: KnownNat x => Vec (NatTimes2 x) Bool
+test29 = repeatV False
+
 tests :: TestTree
 tests = testGroup "ghc-typelits-natnormalise"
   [ testGroup "Basic functionality"
