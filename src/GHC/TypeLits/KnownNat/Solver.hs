@@ -105,6 +105,10 @@ where
 -- base
 import Control.Arrow
   ( (&&&), first )
+import Data.Foldable
+  ( asum )
+import Data.List.NonEmpty as NE
+  ( filter )
 import Data.Maybe
   ( catMaybes, fromMaybe, mapMaybe )
 
@@ -117,7 +121,7 @@ import Control.Monad.Trans.Writer.Strict
 import GHC.TypeLits.Normalise.SOP
   ( SOP (..), Product (..), Symbol (..) )
 import GHC.TypeLits.Normalise.Unify
-  ( CType (..),normaliseNat, reifySOP, CoreSOP )
+  ( CType (..),normaliseNat, reifySOP )
 
 -- ghc-tcplugin-api
 import GHC.TcPlugin.API
@@ -339,16 +343,31 @@ constraintToEvTerm defs givensTyConSubst givens (ct,cls,op,orig) = do
                  found@Just {} -> return found
                  -- 3.b If not, we check if the outer type-level operation
                  -- has a corresponding KnownNat<N> instance.
-                 _ -> go (op,Nothing)
+                 _ -> go [] (op,Nothing)
     return ((first (,ct)) <$> evM)
   where
     -- Determine whether the outer type-level operation has a corresponding
     -- KnownNat<N> instance, where /N/ corresponds to the arity of the
     -- type-level operation
-    go :: (Type, Maybe Coercion) -> TcPluginM Solve (Maybe (EvTerm,[Ct]))
-    go (coreView -> Just tyN, coM) = go (tyN, coM)
-    go (go_other -> Just ev, _) = return (Just (ev,[]))
-    go (ty@(TyConApp tc args0), sM)
+    go :: [Coercion] -> (Type, Maybe Coercion) -> TcPluginM Solve (Maybe (EvTerm,[Ct]))
+    -- Look through type aliases
+    go deps (coreView -> Just tyN, coM) = go deps (tyN, coM)
+    -- Look through rewrites
+    go deps0 (ty, coM)
+      | Just tcapps <- splitTyConApp_upTo givensTyConSubst ty
+      -- We are only interested in the splitTyConApp_upTo result that used a
+      -- rewrite
+      , withDeps@(_:_) <- NE.filter (\(_,_,deps) -> not (null deps)) tcapps
+      = do results <- traverse (\(tc, args, deps1) -> go (deps0 <> deps1)
+                                                         (TyConApp tc args, coM))
+                               withDeps
+           return (asum results)
+    -- See whether there is a given that matches it (after having looked through
+    -- type aliases and rewrites)
+    go deps (go_other deps -> Just ev, _) = return (Just (ev,[]))
+    -- And if there isn't, see whether we can construct it using a KnownNat<N>
+    -- instance
+    go deps (ty@(TyConApp tc args0), sM)
       | let tcNm = tyConName tc
       , Just m <- nameModule_maybe tcNm
       = do
@@ -400,8 +419,6 @@ constraintToEvTerm defs givensTyConSubst givens (ct,cls,op,orig) = do
                         . splitFunTys          -- ([KnownNat x, KnowNat y], DKnownNat2 "+" x y)
                         . (`piResultTys` args0N) -- (KnowNat x, KnownNat y) => DKnownNat2 "+" x y
                         $ idType df_id         -- forall a b . (KnownNat a, KnownNat b) => DKnownNat2 "+" a b
-                deps :: [Coercion]
-                deps = [] -- XXX TODO: not declaring dependency on outer Givens
             (evs,new) <- unzip <$> mapM (go_arg . irrelevantMult) df_args
             if className cls == className (knownBool defs)
                -- Create evidence using the original, flattened, argument of
@@ -440,17 +457,17 @@ constraintToEvTerm defs givensTyConSubst givens (ct,cls,op,orig) = do
                -- 'KnownNat fsk'; the one GHC originally asked us to solve.
                then return ((,concat new) <$> makeOpDictByFiat df cls args1N args0N (unOrig orig) deps evs)
                else return ((,concat new) <$> makeOpDict df cls args1N args0N (unOrig orig) deps evs (fmap (ty,) sM))
-          _ -> return ((,[]) <$> go_other ty)
+          _ -> return ((,[]) <$> go_other deps ty)
 
-    go ((LitTy (NumTyLit i)), _)
+    go deps ((LitTy (NumTyLit i)), _)
       -- Let GHC solve simple Literal constraints
       | LitTy _ <- op
       = return Nothing
       -- This plugin only solves Literal KnownNat's that needed to be normalised
       -- first
       | otherwise
-      = (fmap (,[])) <$> makeLitDict cls op [] i -- XXX: ok to pass empty dependent coercions?
-    go _ = return Nothing
+      = (fmap (,[])) <$> makeLitDict cls op deps i
+    go _ _ = return Nothing
 
     -- Get EvTerm arguments for type-level operations. If they do not exist
     -- as [G]iven constraints, then generate new [W]anted constraints
@@ -463,13 +480,13 @@ constraintToEvTerm defs givensTyConSubst givens (ct,cls,op,orig) = do
 
     -- Fall through case: look up the normalised [W]anted constraint in the list
     -- of [G]iven constraints.
-    go_other :: Type -> Maybe EvTerm
-    go_other ty =
+    go_other :: [Coercion] -> Type -> Maybe EvTerm
+    go_other deps ty =
       let knClsTc = classTyCon cls
           kn      = mkTyConApp knClsTc [ty]
           cast    = if CType ty == CType op
                        then Just . EvExpr
-                       else makeKnCoercion cls ty op [] -- XXX: ok to pass empty dependent coercions?
+                       else makeKnCoercion cls ty op deps
       in  cast =<< lookup (CType kn) givens
 
     -- Find a known constraint for a wanted, so that (modulo normalization)
@@ -507,19 +524,16 @@ constraintToEvTerm defs givensTyConSubst givens (ct,cls,op,orig) = do
           -- with the original Nat operation
           subWant  = mkTyConApp typeNatSubTyCon . (:[want])
           -- exploded :: [()]
-          exploded = map (discardCo . runWriter . normaliseNat givensTyConSubst . subWant . fst &&& id)
+          exploded = map (fst . runWriter . normaliseNat givensTyConSubst . subWant . fst &&& id)
                          knownsX
-          -- XXX TODO: discarding coercions produced by 'normaliseNat'
-          discardCo :: ((CoreSOP, [Coercion]), [(Type, Type)]) -> CoreSOP
-          discardCo ((a, _co), _) = a
           -- interesting cases for us are those where
           -- wanted and given only differ by a constant
-          examineDiff (S [P [I n]]) entire = Just (entire,I n)
-          examineDiff (S [P [V v]]) entire = Just (entire,V v)
+          examineDiff ((S [P [I n]]),deps) entire = Just (entire,I n,deps)
+          examineDiff ((S [P [V v]]),deps) entire = Just (entire,V v,deps)
           examineDiff _ _ = Nothing
           interesting = mapMaybe (uncurry examineDiff) exploded
       -- convert the first suitable evidence
-      (((h,sM),corr):_) <- pure interesting
+      (((h,sM),corr,deps):_) <- pure interesting
       x <- case corr of
                 I 0 -> pure (fromMaybe (h,Nothing) sM)
                 I i | i < 0
@@ -573,7 +587,7 @@ constraintToEvTerm defs givensTyConSubst givens (ct,cls,op,orig) = do
                             ( mkTyConApp typeNatSubTyCon [h,lC]
                             , Nothing
                             )
-      MaybeT (go x)
+      MaybeT (go deps x)
 
 makeWantedEv
   :: Ct
