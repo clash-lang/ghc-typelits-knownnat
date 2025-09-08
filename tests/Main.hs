@@ -201,6 +201,12 @@ repeatV = undefined
 test29 :: KnownNat x => Vec (NatTimes2 x) Bool
 test29 = repeatV False
 
+test30 :: forall a b . (b ~ (2^a)) => SNat a -> SNat (Log b)
+test30 SNat = SNat @(Log b)
+
+test31 :: (KnownNat n, KnownNat m, k ~ (n + m)) => proxy n -> proxy m -> proxy k -> Natural
+test31 _ _ = natVal
+
 tests :: TestTree
 tests = testGroup "ghc-typelits-natnormalise"
   [ testGroup "Basic functionality"
@@ -277,6 +283,12 @@ tests = testGroup "ghc-typelits-natnormalise"
     , testCase "KnownNat (a + b), KnownNat b => KnownNat a; @(a+b) ~ 8, b ~ 6" $
       show (test21 (Proxy @8) (Proxy @6)) @?=
       "2"
+    , testCase "b ~ 2 ^ a, KnownNat a => KnownNat (Log b)" $
+      show (test30 (SNat @8)) @?=
+      "8"
+    , testCase "k ~ m + n, KnownNat m, KnownNat n => KnownNat k" $
+      show (test31 (Proxy @2) (Proxy @6) Proxy) @?=
+      "8"
     ],
     testGroup "Normalisation"
     [ testCase "KnownNat (m-n+n) ~ KnownNat m" $

@@ -2,6 +2,8 @@
 
 ## 0.8.1
 * Fix [#53](https://github.com/clash-lang/ghc-typelits-knownnat/issues/53) The plugin sometimes doesn't look through type aliases
+* Fix [#13](https://github.com/clash-lang/ghc-typelits-knownnat/issues/13) Type equality constraints aren't used by solver
+* Fix [#42](https://github.com/clash-lang/ghc-typelits-knownnat/issues/42) Intermediate type variable stops derivation of `KnownNat` constraint
 
 ## 0.8.0 *September 8th 2025*
 * Support for GHC 9.14.1.
