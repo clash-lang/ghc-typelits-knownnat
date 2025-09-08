@@ -1,47 +1,48 @@
+cabal-version:       3.0
 name:                ghc-typelits-knownnat
-version:             0.7.13
+version:             0.8.0
 synopsis:            Derive KnownNat constraints from other KnownNat constraints
 description:
   A type checker plugin for GHC that can derive \"complex\" @KnownNat@
   constraints from other simple/variable @KnownNat@ constraints. i.e. without
   this plugin, you must have both a @KnownNat n@ and a @KnownNat (n+2)@
   constraint in the type signature of the following function:
-  .
+
   @
   f :: forall n . (KnownNat n, KnownNat (n+2)) => Proxy n -> Integer
   f _ = natVal (Proxy :: Proxy n) + natVal (Proxy :: Proxy (n+2))
   @
-  .
+
   Using the plugin you can omit the @KnownNat (n+2)@ constraint:
-  .
+
   @
   f :: forall n . KnownNat n => Proxy n -> Integer
   f _ = natVal (Proxy :: Proxy n) + natVal (Proxy :: Proxy (n+2))
   @
-  .
+
   The plugin can derive @KnownNat@ constraints for types consisting of:
-  .
+
   * Type variables, when there is a corresponding @KnownNat@ constraint
-  .
+
   * Type-level naturals
-  .
+
   * Applications of the arithmetic expression: +,-,*,^
-  .
+
   * Type functions, when there is either:
-  .
+
           1. a matching given @KnownNat@ constraint; or
-  .
+
           2. a corresponding @KnownNat\<N\>@ instance for the type function
-  .
+
   To use the plugin, add the
-  .
+
   @
   OPTIONS_GHC -fplugin GHC.TypeLits.KnownNat.Solver
   @
-  .
+
   Pragma to the header of your file.
 homepage:            http://clash-lang.org/
-license:             BSD2
+license:             BSD-2-Clause
 license-file:        LICENSE
 author:              Christiaan Baaij
 maintainer:          christiaan.baaij@gmail.com
@@ -52,9 +53,7 @@ category:            Type System
 build-type:          Simple
 extra-source-files:  README.md
                      CHANGELOG.md
-cabal-version:       >=1.10
-tested-with:         GHC == 8.0.2, GHC == 8.2.2, GHC == 8.4.4, GHC == 8.6.5,
-                     GHC == 8.8.4, GHC == 8.10.7, GHC == 9.0.2, GHC == 9.2.8,
+tested-with:         GHC == 8.8.4, GHC == 8.10.7, GHC == 9.0.2, GHC == 9.2.8,
                      GHC == 9.4.8, GHC == 9.6.6, GHC == 9.8.4, GHC == 9.10.1,
                      GHC == 9.12.1
 
@@ -69,9 +68,10 @@ flag deverror
   manual: True
 
 library
-  exposed-modules:     GHC.TypeLits.KnownNat,
+  exposed-modules:     GHC.TypeLits.KnownNat
                        GHC.TypeLits.KnownNat.Solver
-  other-modules:       GHC.TypeLits.KnownNat.TH
+  other-modules:       GHC.TypeLits.KnownNat.Compat
+                       GHC.TypeLits.KnownNat.TH
   other-extensions:    AllowAmbiguousTypes
                        DataKinds
                        FlexibleInstances
@@ -88,24 +88,54 @@ library
                        UndecidableInstances
                        ViewPatterns
   build-depends:       base                      >= 4.9      && <5,
-                       ghc                       >= 8.0.1    && <9.13,
-                       ghc-prim                  >= 0.4.0.0  && <0.14,
-                       ghc-tcplugins-extra       >= 0.3.1,
-                       ghc-typelits-natnormalise >= 0.7.1    && <0.8,
+                       ghc                       >= 8.0.1    && <9.17,
+                       ghc-tcplugin-api          >= 0.17.2.0 && <0.18,
+                       ghc-typelits-natnormalise >= 0.8.0    && <0.9,
                        transformers              >= 0.5.2.0  && <0.7,
-                       template-haskell          >= 2.11.0.0 && <2.24
+                       template-haskell          >= 2.11.0.0 && <2.26
   hs-source-dirs:      src
   default-language:    Haskell2010
+  ghc-options:         -Wall -Wno-unticked-promoted-constructors
   if flag(deverror)
-    ghc-options:       -Wall -Werror
+    ghc-options:       -Werror
+
+  if impl(ghc >= 9.0.0)
+    build-depends:     ghc-bignum >=1.0 && <1.6
   else
-    ghc-options:       -Wall
-  if impl(ghc >= 8.0) && impl(ghc < 9.4)
-    hs-source-dirs:    src-pre-ghc-9.4
-  if impl(ghc >= 9.4) && impl(ghc < 9.13)
-    hs-source-dirs:    src-ghc-9.4
-  if impl(ghc < 8.2)
-    build-depends:     integer-gmp               >= 0.5.1.0
+    build-depends:     integer-gmp >=1.0 && <1.1
+    mixins:
+      ghc
+        ( TcTypeNats   as GHC.Builtin.Types.Literals
+        , CoreSyn      as GHC.Core
+        , Class        as GHC.Core.Class
+        , Coercion     as GHC.Core.Coercion
+        , DataCon      as GHC.Core.DataCon
+        , InstEnv      as GHC.Core.InstEnv
+        , TyCoRep      as GHC.Core.TyCo.Rep
+        , Type         as GHC.Core.Type
+        , CoreUtils    as GHC.Core.Utils
+        , Pair         as GHC.Data.Pair
+        , Plugins      as GHC.Driver.Plugins
+        , TcEvidence   as GHC.Tc.Types.Evidence
+        , Id           as GHC.Types.Id
+        , Name         as GHC.Types.Name
+        , OccName      as GHC.Types.Name.Occurrence
+        , Var          as GHC.Types.Var
+        , Module       as GHC.Unit.Module
+        )
+
+    if impl(ghc >= 8.9)
+      mixins:
+        ghc
+          ( Predicate  as GHC.Core.Predicate
+          , TyCoSubst  as GHC.Core.TyCo.Subst
+          )
+    else
+      mixins:
+        ghc
+          ( Type      as GHC.Core.Predicate
+          , Type      as GHC.Core.TyCo.Subst
+          )
 
 test-suite unittests
   type:                exitcode-stdio-1.0
@@ -113,7 +143,7 @@ test-suite unittests
   Other-Modules:       TestFunctions
   build-depends:       base                      >= 4.8   && <5,
                        ghc-typelits-knownnat,
-                       ghc-typelits-natnormalise >= 0.7.1 && <0.8,
+                       ghc-typelits-natnormalise >= 0.8.0 && <0.9,
                        tasty                     >= 0.10,
                        tasty-hunit               >= 0.9,
                        tasty-quickcheck          >= 0.8
@@ -125,7 +155,7 @@ test-suite unittests
                        GADTs
                        MultiParamTypeClasses
                        KindSignatures
-                       ScopedTypeVariables,
+                       ScopedTypeVariables
                        TemplateHaskell
                        TypeApplications
                        TypeFamilies

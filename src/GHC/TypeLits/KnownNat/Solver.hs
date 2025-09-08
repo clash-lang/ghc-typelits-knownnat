@@ -85,10 +85,15 @@ Pragma to the header of your file.
 -}
 
 {-# LANGUAGE CPP           #-}
+
+{-# LANGUAGE BangPatterns  #-}
+{-# LANGUAGE DataKinds     #-}
 {-# LANGUAGE LambdaCase    #-}
+{-# LANGUAGE MultiWayIf    #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE ViewPatterns  #-}
 {-# LANGUAGE TemplateHaskellQuotes #-}
+
 {-# LANGUAGE Trustworthy   #-}
 
 {-# OPTIONS_HADDOCK show-extensions #-}
@@ -97,93 +102,83 @@ module GHC.TypeLits.KnownNat.Solver
   ( plugin )
 where
 
--- external
-import Control.Arrow ((&&&), first)
-import Control.Monad.Trans.Maybe (MaybeT (..))
+-- base
+import Control.Arrow
+  ( (&&&), first )
+import Data.Maybe
+  ( catMaybes, fromMaybe, mapMaybe )
+
+-- transformers
+import Control.Monad.Trans.Maybe
+  ( MaybeT (..) )
 import Control.Monad.Trans.Writer.Strict
-import Data.Maybe (catMaybes, fromMaybe, mapMaybe)
-import Data.Type.Ord (OrdCond)
-import Data.Type.Bool (If)
-import GHC.TcPluginM.Extra (newWanted, tracePlugin)
-import GHC.TypeLits.Normalise.SOP (SOP (..), Product (..), Symbol (..))
-import GHC.TypeLits.Normalise.Unify (CType (..),normaliseNat,reifySOP)
 
--- GHC API
-import GHC.Builtin.Names (knownNatClassName)
-import GHC.Builtin.Types (boolTy)
-import GHC.Builtin.Types.Literals (typeNatAddTyCon, typeNatDivTyCon, typeNatSubTyCon)
-import GHC.Builtin.Types (promotedFalseDataCon, promotedTrueDataCon)
-import GHC.Builtin.Types.Literals (typeNatCmpTyCon)
-import GHC.Core.Class (Class, classMethods, className, classTyCon)
+-- ghc-typelits-natnormalise
+import GHC.TypeLits.Normalise.SOP
+  ( SOP (..), Product (..), Symbol (..) )
+import GHC.TypeLits.Normalise.Unify
+  ( CType (..),normaliseNat, reifySOP, CoreSOP )
+
+-- ghc-tcplugin-api
+import GHC.TcPlugin.API
+import GHC.TcPlugin.API.TyConSubst
+
+-- ghc-typelits-knownnat
+import GHC.TypeLits.KnownNat.Compat
+  ( KnownNatDefs(..), lookupKnownNatDefs, mkNaturalExpr
+  , coercionRKind, classMethodTy
+  , irrelevantMult
+  )
+
+-- ghc
+import GHC.Builtin.Names
+  ( knownNatClassName )
+#if MIN_VERSION_ghc(9,1,0)
+import GHC.Builtin.Types
+  ( promotedFalseDataCon, promotedTrueDataCon )
+import GHC.Builtin.Types.Literals
+  ( typeNatCmpTyCon )
+#endif
+import GHC.Builtin.Types.Literals
+  ( typeNatAddTyCon, typeNatDivTyCon, typeNatSubTyCon )
+import GHC.Core
+  ( mkApps, mkTyApps )
+import GHC.Core.Class
+  ( classMethods, classTyVars )
 import GHC.Core.Coercion
-  (Coercion, Role (Nominal, Representational), coercionRKind, mkNomReflCo,
-   mkTyConAppCo, mkUnivCo)
-import GHC.Core.InstEnv (instanceDFunId, lookupUniqueInstEnv)
-import GHC.Core.Make (mkNaturalExpr)
-import GHC.Core.Predicate
-  (EqRel (NomEq), Pred (ClassPred,EqPred), classifyPredType)
-import GHC.Core.TyCo.Rep (Type (..), TyLit (..), UnivCoProvenance (PluginProv))
-import GHC.Core.TyCon (tyConName)
-#if MIN_VERSION_ghc(9,6,0)
+  ( instNewTyCon_maybe, mkNomReflCo, mkTyConAppCo )
+import GHC.Core.DataCon
+  ( dataConWrapId )
+import GHC.Core.InstEnv
+  ( instanceDFunId, lookupUniqueInstEnv )
+import GHC.Core.TyCo.Rep
+  ( Type(..), TyLit(..) )
+import GHC.Core.TyCo.Subst
+  ( substTyWithUnchecked )
 import GHC.Core.Type
-  (PredType, dropForAlls, funResultTy, mkNumLitTy, mkStrLitTy, mkTyConApp,
-   piResultTys, splitFunTys, splitTyConApp_maybe, tyConAppTyCon_maybe, typeKind,
-   irrelevantMult)
-import GHC.Core.TyCo.Compare
-  (eqType)
-#else
-import GHC.Core.Type
-  (PredType, dropForAlls, eqType, funResultTy, mkNumLitTy, mkStrLitTy, mkTyConApp,
-   piResultTys, splitFunTys, splitTyConApp_maybe, tyConAppTyCon_maybe, typeKind,
-   irrelevantMult)
-#endif
-import GHC.Data.FastString (fsLit)
-import GHC.Driver.Plugins (Plugin (..), defaultPlugin, purePlugin)
-import GHC.Tc.Instance.Family (tcInstNewTyCon_maybe)
-import GHC.Tc.Plugin (TcPluginM, tcLookupClass, getInstEnvs, unsafeTcPluginTcM, tcPluginIO, tcLookupTyCon)
-import GHC.Tc.Types (TcPlugin(..), TcPluginSolveResult (..), getPlatform, env_top)
-import GHC.Tc.Types.Constraint
-  (Ct, ctEvExpr, ctEvidence, ctEvPred, ctLoc, mkNonCanonical)
-#if MIN_VERSION_ghc(9,6,0)
-import GHC.Tc.Types.Evidence
-  (EvTerm (..), EvExpr, EvBindsVar, evDFunApp, mkEvCast, evTermCoercion_maybe)
+  ( piResultTys, splitFunTys )
+import GHC.Core.Utils
+  ( exprType, mkCast )
+import GHC.Driver.Plugins
+  ( Plugin (..), defaultPlugin, purePlugin )
 import GHC.Plugins
-  (mkSymCo, mkTransCo)
-#else
+  ( HasDebugCallStack )
 import GHC.Tc.Types.Evidence
-  (EvTerm (..), EvExpr, EvBindsVar, evDFunApp, mkEvCast, mkTcSymCo, mkTcTransCo,
-   evTermCoercion_maybe)
-#endif
-import GHC.Types.Id (idType)
-import GHC.Types.Name (nameModule_maybe, nameOccName, Name)
-import GHC.Types.Name.Occurrence (occNameString)
-import GHC.Types.Unique.FM (emptyUFM)
-import GHC.Types.Var (DFunId)
-import GHC.Unit.Module (moduleName, moduleNameString)
-import qualified Language.Haskell.TH as TH
-import GHC.Plugins (thNameToGhcNameIO, TyCon)
-import GHC.Driver.Env (hsc_NC)
-import GHC.Data.IOEnv (getEnv)
-import GHC.TypeLits.KnownNat
+  ( evTermCoercion_maybe, evSelector )
+import GHC.Types.Id
+  ( idType )
+import GHC.Types.Name
+  ( nameModule_maybe, nameOccName )
+import GHC.Types.Name.Occurrence
+  ( occNameString )
+import GHC.Types.Var
+  ( DFunId )
+import GHC.Unit.Module
+  ( moduleName, moduleNameString )
+import GHC.Utils.Outputable
+  ( (<+>), vcat, text )
 
-#if MIN_VERSION_ghc(9,6,0)
-mkTcSymCo :: Coercion -> Coercion
-mkTcSymCo = mkSymCo
-
-mkTcTransCo :: Coercion -> Coercion -> Coercion
-mkTcTransCo = mkTransCo
-#endif
-
--- | Classes and instances from "GHC.TypeLits.KnownNat"
-data KnownNatDefs
-  = KnownNatDefs
-  { knownBool     :: Class
-  , knownBoolNat2 :: Class
-  , knownNat2Bool :: Class
-  , knownNatN     :: Int -> Maybe Class -- ^ KnownNat{N}
-  , ordCondTyCon  :: TyCon
-  , ifTyCon       :: TyCon
-  }
+--------------------------------------------------------------------------------
 
 -- | Simple newtype wrapper to distinguish the original (flattened) argument of
 -- knownnat from the un-flattened version that we work with internally.
@@ -281,25 +276,24 @@ Pragma to the header of your file.
 plugin :: Plugin
 plugin
   = defaultPlugin
-  { tcPlugin = const $ Just normalisePlugin
-#if MIN_VERSION_ghc(8,6,0)
+  { tcPlugin = \ _ -> Just $ mkTcPlugin normalisePlugin
   , pluginRecompile = purePlugin
-#endif
   }
 
 normalisePlugin :: TcPlugin
-normalisePlugin = tracePlugin "ghc-typelits-knownnat"
+normalisePlugin =
   TcPlugin { tcPluginInit  = lookupKnownNatDefs
            , tcPluginSolve = solveKnownNat
            , tcPluginRewrite = const emptyUFM
            , tcPluginStop  = const (return ())
            }
 
-solveKnownNat :: KnownNatDefs -> EvBindsVar -> [Ct] -> [Ct]
-              -> TcPluginM TcPluginSolveResult
-solveKnownNat _defs _ _givens []      = return (TcPluginOk [] [])
-solveKnownNat defs  _ givens  wanteds = do
-  let kn_wanteds = map (\(x,y,z,orig) -> (x,y,z,orig))
+solveKnownNat :: KnownNatDefs -> [Ct] -> [Ct]
+              -> TcPluginM Solve TcPluginSolveResult
+solveKnownNat _defs _givens []      = return (TcPluginOk [] [])
+solveKnownNat defs  givens  wanteds = do
+  let givensTyConSubst = mkTyConSubst givens
+      kn_wanteds = map (\(x,y,z,orig) -> (x,y,z,orig))
                  $ mapMaybe (toKnConstraint defs) wanteds
   case kn_wanteds of
     [] -> return (TcPluginOk [] [])
@@ -309,7 +303,7 @@ solveKnownNat defs  _ givens  wanteds = do
 
       -- Try to solve the wanted KnownNat constraints given the [G]iven
       -- KnownNat constraints
-      (solved,new) <- (unzip . catMaybes) <$> (mapM (constraintToEvTerm defs given_map) kn_wanteds)
+      (solved,new) <- (unzip . catMaybes) <$> (mapM (constraintToEvTerm defs givensTyConSubst given_map) kn_wanteds)
       return (TcPluginOk solved (concat new))
 
 -- | Get the KnownNat constraints
@@ -328,47 +322,16 @@ toGivenEntry ct = let ct_ev = ctEvidence ct
                       ev    = ctEvExpr   ct_ev
                   in  (CType c_ty,ev)
 
--- | Find the \"magic\" classes and instances in "GHC.TypeLits.KnownNat"
-lookupKnownNatDefs :: TcPluginM KnownNatDefs
-lookupKnownNatDefs = do
-    kbC    <- look ''KnownBool
-    kbn2C  <- look ''KnownBoolNat2
-    kn2bC  <- look ''KnownNat2Bool
-    kn1C   <- look ''KnownNat1
-    kn2C   <- look ''KnownNat2
-    kn3C   <- look ''KnownNat3
-    ordcond <- lookupTHName ''OrdCond >>= tcLookupTyCon
-    ifTc <- lookupTHName ''If >>= tcLookupTyCon
-    return KnownNatDefs
-           { knownBool     = kbC
-           , knownBoolNat2 = kbn2C
-           , knownNat2Bool = kn2bC
-           , knownNatN     = \case { 1 -> Just kn1C
-                                   ; 2 -> Just kn2C
-                                   ; 3 -> Just kn3C
-                                   ; _ -> Nothing
-                                   }
-           , ordCondTyCon  = ordcond
-           , ifTyCon       = ifTc
-           }
-  where
-    look nm = lookupTHName nm >>= tcLookupClass
-
-lookupTHName :: TH.Name -> TcPluginM Name
-lookupTHName th = do
-    nc <- unsafeTcPluginTcM (hsc_NC . env_top <$> getEnv)
-    res <- tcPluginIO $ thNameToGhcNameIO nc th
-    maybe (fail $ "Failed to lookup " ++ show th) return res
-
 -- | Try to create evidence for a wanted constraint
 constraintToEvTerm
   :: KnownNatDefs
   -- ^ The "magic" KnownNatN classes
+  -> TyConSubst
   -> [(CType,EvExpr)]
   -- ^ All the [G]iven constraints
   -> KnConstraint
-  -> TcPluginM (Maybe ((EvTerm,Ct),[Ct]))
-constraintToEvTerm defs givens (ct,cls,op,orig) = do
+  -> TcPluginM Solve (Maybe ((EvTerm,Ct),[Ct]))
+constraintToEvTerm defs givensTyConSubst givens (ct,cls,op,orig) = do
     -- 1. Determine if we are an offset apart from a [G]iven constraint
     offsetM <- offset op
     evM     <- case offsetM of
@@ -382,7 +345,7 @@ constraintToEvTerm defs givens (ct,cls,op,orig) = do
     -- Determine whether the outer type-level operation has a corresponding
     -- KnownNat<N> instance, where /N/ corresponds to the arity of the
     -- type-level operation
-    go :: (Type, Maybe Coercion) -> TcPluginM (Maybe (EvTerm,[Ct]))
+    go :: (Type, Maybe Coercion) -> TcPluginM Solve (Maybe (EvTerm,[Ct]))
     go (go_other -> Just ev, _) = return (Just (ev,[]))
     go (ty@(TyConApp tc args0), sM)
       | let tcNm = tyConName tc
@@ -394,10 +357,13 @@ constraintToEvTerm defs givens (ct,cls,op,orig) = do
             fn0 = mS ++ "." ++ tcS
             fn1 = mkStrLitTy (fsLit fn0)
             args1 = fn1:args0
-            instM = case () of
-              () | Just knN_cls    <- knownNatN defs (length args0)
+            instM =
+              if | Just knN_cls    <- knownNatN defs (length args0)
                  , Right (inst, _) <- lookupUniqueInstEnv ienv knN_cls args1
                  -> Just (inst,knN_cls,args0,args1)
+  -- TODO: we should re-use the parsing functionality
+  -- that is in GHC.TypeLits.NatNormalise.Compat.
+#if MIN_VERSION_ghc(9,1,0)
                  | tc == ordCondTyCon defs
                  , [_,cmpNat,TyConApp t1 [],TyConApp t2 [],TyConApp f1 []] <- args0
                  , TyConApp cmpNatTc args2@(arg2:_) <- cmpNat
@@ -410,14 +376,14 @@ constraintToEvTerm defs givens (ct,cls,op,orig) = do
                        args1N  = ki:fn1:args2
                  , Right (inst,_) <- lookupUniqueInstEnv ienv knN_cls args1N
                  -> Just (inst,knN_cls,args2,args1N)
+#endif
                  | [arg0,_] <- args0
                  , let knN_cls = knownBoolNat2 defs
                        ki      = typeKind arg0
                        args1N  = ki:args1
                  , Right (inst, _) <- lookupUniqueInstEnv ienv knN_cls args1N
                  -> Just (inst,knN_cls,args0,args1N)
-                 | (arg0:args0Rest) <- args0
-                 , length args0Rest == 3
+                 | (arg0:args0Rest@[_,_,_]) <- args0
                  , tc == ifTyCon defs
                  , let args1N = arg0:fn1:args0Rest
                        knN_cls = knownNat2Bool defs
@@ -433,6 +399,8 @@ constraintToEvTerm defs givens (ct,cls,op,orig) = do
                         . splitFunTys          -- ([KnownNat x, KnowNat y], DKnownNat2 "+" x y)
                         . (`piResultTys` args0N) -- (KnowNat x, KnownNat y) => DKnownNat2 "+" x y
                         $ idType df_id         -- forall a b . (KnownNat a, KnownNat b) => DKnownNat2 "+" a b
+                deps :: [Coercion]
+                deps = [] -- XXX TODO: not declaring dependency on outer Givens
             (evs,new) <- unzip <$> mapM (go_arg . irrelevantMult) df_args
             if className cls == className (knownBool defs)
                -- Create evidence using the original, flattened, argument of
@@ -469,8 +437,8 @@ constraintToEvTerm defs givens (ct,cls,op,orig) = do
                -- So while the "shape" of the KnownNat evidence that we return
                -- follows 'CLog 2 n + 1', the type of the evidence will be
                -- 'KnownNat fsk'; the one GHC originally asked us to solve.
-               then return ((,concat new) <$> makeOpDictByFiat df cls args1N args0N (unOrig orig) evs)
-               else return ((,concat new) <$> makeOpDict df cls args1N args0N (unOrig orig) evs (fmap (ty,) sM))
+               then return ((,concat new) <$> makeOpDictByFiat df cls args1N args0N (unOrig orig) deps evs)
+               else return ((,concat new) <$> makeOpDict df cls args1N args0N (unOrig orig) deps evs (fmap (ty,) sM))
           _ -> return ((,[]) <$> go_other ty)
 
     go ((LitTy (NumTyLit i)), _)
@@ -480,12 +448,12 @@ constraintToEvTerm defs givens (ct,cls,op,orig) = do
       -- This plugin only solves Literal KnownNat's that needed to be normalised
       -- first
       | otherwise
-      = (fmap (,[])) <$> makeLitDict cls op i
+      = (fmap (,[])) <$> makeLitDict cls op [] i -- XXX: ok to pass empty dependent coercions?
     go _ = return Nothing
 
     -- Get EvTerm arguments for type-level operations. If they do not exist
     -- as [G]iven constraints, then generate new [W]anted constraints
-    go_arg :: PredType -> TcPluginM (EvExpr,[Ct])
+    go_arg :: PredType -> TcPluginM Solve (EvExpr,[Ct])
     go_arg ty = case lookup (CType ty) givens of
       Just ev -> return (ev,[])
       _ -> do
@@ -500,12 +468,12 @@ constraintToEvTerm defs givens (ct,cls,op,orig) = do
           kn      = mkTyConApp knClsTc [ty]
           cast    = if CType ty == CType op
                        then Just . EvExpr
-                       else makeKnCoercion cls ty op
+                       else makeKnCoercion cls ty op [] -- XXX: ok to pass empty dependent coercions?
       in  cast =<< lookup (CType kn) givens
 
     -- Find a known constraint for a wanted, so that (modulo normalization)
     -- the two are a constant offset apart.
-    offset :: Type -> TcPluginM (Maybe (EvTerm,[Ct]))
+    offset :: Type -> TcPluginM Solve (Maybe (EvTerm,[Ct]))
     offset LitTy{} = pure Nothing
     offset want = runMaybeT $ do
       let -- Get the knownnat contraints
@@ -525,7 +493,7 @@ constraintToEvTerm defs givens (ct,cls,op,orig) = do
             | ty1 `eqType` tyK
             = Just (ty2,Just (tyK,evTermCoercion_maybe (EvExpr ev)))
             | ty2 `eqType` tyK
-            = Just (ty1,Just (tyK,fmap mkTcSymCo (evTermCoercion_maybe (EvExpr ev))))
+            = Just (ty1,Just (tyK,fmap mkSymCo (evTermCoercion_maybe (EvExpr ev))))
             | otherwise
             = Nothing
           -- Get only the [G]iven KnownNat constraints
@@ -538,8 +506,11 @@ constraintToEvTerm defs givens (ct,cls,op,orig) = do
           -- with the original Nat operation
           subWant  = mkTyConApp typeNatSubTyCon . (:[want])
           -- exploded :: [()]
-          exploded = map (fst . runWriter . normaliseNat . subWant . fst &&& id)
+          exploded = map (discardCo . runWriter . normaliseNat givensTyConSubst . subWant . fst &&& id)
                          knownsX
+          -- XXX TODO: discarding coercions produced by 'normaliseNat'
+          discardCo :: ((CoreSOP, [Coercion]), [(Type, Type)]) -> CoreSOP
+          discardCo ((a, _co), _) = a
           -- interesting cases for us are those where
           -- wanted and given only differ by a constant
           examineDiff (S [P [I n]]) entire = Just (entire,I n)
@@ -606,7 +577,7 @@ constraintToEvTerm defs givens (ct,cls,op,orig) = do
 makeWantedEv
   :: Ct
   -> Type
-  -> TcPluginM (EvExpr,Ct)
+  -> TcPluginM Solve (EvExpr,Ct)
 makeWantedEv ct ty = do
   -- Create a new wanted constraint
   wantedCtEv <- newWanted (ctLoc ct) ty
@@ -632,6 +603,7 @@ dictionary for binary functions, the coercion happens in the following steps:
 
 this process is mirrored for the dictionary functions of a higher arity
 -}
+
 makeOpDict
   :: (Class,DFunId)
   -- ^ "magic" class function and dictionary function id
@@ -643,52 +615,32 @@ makeOpDict
   -- ^ Argument types for the Instance
   -> Type
   -- ^ Type of the result
+  -> [Coercion]
+  -- ^ Dependent coercions
   -> [EvExpr]
   -- ^ Evidence arguments
   -> Maybe (Type, Coercion)
   -> Maybe EvTerm
-makeOpDict (opCls,dfid) knCls tyArgsC tyArgsI z evArgs sM
+makeOpDict (opCls,dfid) knCls tyArgsC tyArgsI z deps evArgs sM
   | let z1 = maybe z fst sM
-  , Just (_, kn_co_dict) <- tcInstNewTyCon_maybe (classTyCon knCls) [z1]
-    -- KnownNat n ~ SNat n
-  , [ kn_meth ] <- classMethods knCls
-  , Just kn_tcRep <- tyConAppTyCon_maybe -- SNat
-                      $ funResultTy      -- SNat n
-                      $ dropForAlls      -- KnownNat n => SNat n
-                      $ idType kn_meth   -- forall n. KnownNat n => SNat n
-  , Just (_, kn_co_rep) <- tcInstNewTyCon_maybe kn_tcRep [z1]
-    -- SNat n ~ Integer
-  , Just (_, op_co_dict) <- tcInstNewTyCon_maybe (classTyCon opCls) tyArgsC
-    -- KnownNatAdd a b ~ SNatKn (a+b)
-  , [ op_meth ] <- classMethods opCls
-  , Just (op_tcRep,op_args) <- splitTyConApp_maybe        -- (SNatKn, [KnownNatF2 f x y])
-                                 $ funResultTy            -- SNatKn (KnownNatF2 f x y)
-                                 $ (`piResultTys` tyArgsC) -- KnownNatAdd f x y => SNatKn (KnownNatF2 f x y)
-                                 $ idType op_meth         -- forall f a b . KnownNat2 f a b => SNatKn (KnownNatF2 f a b)
-  , Just (_, op_co_rep) <- tcInstNewTyCon_maybe op_tcRep op_args
     -- SNatKn (a+b) ~ Integer
-  , EvExpr dfun_inst <- evDFunApp dfid tyArgsI evArgs
+  , let dfun_inst = evDFunApp dfid tyArgsI evArgs
         -- KnownNatAdd a b
-  , let op_to_kn  = mkTcTransCo (mkTcTransCo op_co_dict op_co_rep)
-                                (mkTcSymCo (mkTcTransCo kn_co_dict kn_co_rep))
+  , let op_to_kn :: EvExpr -> EvExpr
+        op_to_kn ev
+            = wrapUnaryClassByFiat knCls [z1] deps
+            $ unwrapUnaryClassOverNewtype opCls tyArgsC ev
         -- KnownNatAdd a b ~ KnownNat (a+b)
-  , let op_to_kn1 = case sM of
-          Nothing -> op_to_kn
+  , let op_to_kn1 ev = case sM of
+          Nothing -> op_to_kn ev
           Just (_,rw) ->
             let kn_co_rw = mkTyConAppCo Representational (classTyCon knCls) [rw]
-#if MIN_VERSION_ghc(9,11,0)
-                kn_co_co = mkUnivCo (PluginProv "ghc-typelits-knownnat") []
-#else
-                kn_co_co = mkUnivCo (PluginProv "ghc-typelits-knownnat")
-#endif
-                            Representational
+                kn_co_co = mkPluginUnivCo "ghc-typelits-knownnat" Representational
+                              deps
                               (coercionRKind kn_co_rw)
                               (mkTyConApp (classTyCon knCls) [z])
-              in mkTcTransCo op_to_kn (mkTcTransCo kn_co_rw kn_co_co)
-  , let ev_tm = mkEvCast dfun_inst op_to_kn1
-  = Just ev_tm
-  | otherwise
-  = Nothing
+              in mkCast (op_to_kn ev) (mkTransCo kn_co_rw kn_co_co)
+  = Just $ EvExpr $ op_to_kn1 dfun_inst
 
 {-
 Given:
@@ -706,25 +658,13 @@ The coercion happens in the following steps:
 makeKnCoercion :: Class          -- ^ KnownNat class
                -> Type           -- ^ Type of the argument
                -> Type           -- ^ Type of the result
+               -> [Coercion]     -- ^ Dependent coercions
                -> EvExpr
                -- ^ KnownNat dictionary for the argument
                -> Maybe EvTerm
-makeKnCoercion knCls x z xEv
-  | Just (_, kn_co_dict_z) <- tcInstNewTyCon_maybe (classTyCon knCls) [z]
-    -- KnownNat z ~ SNat z
-  , [ kn_meth ] <- classMethods knCls
-  , Just kn_tcRep <- tyConAppTyCon_maybe -- SNat
-                      $ funResultTy      -- SNat n
-                      $ dropForAlls      -- KnownNat n => SNat n
-                      $ idType kn_meth   -- forall n. KnownNat n => SNat n
-  , Just (_, kn_co_rep_z) <- tcInstNewTyCon_maybe kn_tcRep [z]
-    -- SNat z ~ Integer
-  , Just (_, kn_co_rep_x) <- tcInstNewTyCon_maybe kn_tcRep [x]
-    -- Integer ~ SNat x
-  , Just (_, kn_co_dict_x) <- tcInstNewTyCon_maybe (classTyCon knCls) [x]
-    -- SNat x ~ KnownNat x
-  = Just . mkEvCast xEv $ (kn_co_dict_x `mkTcTransCo` kn_co_rep_x) `mkTcTransCo` mkTcSymCo (kn_co_dict_z `mkTcTransCo` kn_co_rep_z)
-  | otherwise = Nothing
+makeKnCoercion knCls x z deps knownNat_x
+  = Just $ EvExpr $ wrapUnaryClassByFiat knCls [z] deps
+                  $ unwrapUnaryClassOverNewtype knCls [x] knownNat_x
 
 -- | THIS CODE IS COPIED FROM:
 -- https://github.com/ghc/ghc/blob/8035d1a5dc7290e8d3d61446ee4861e0b460214e/compiler/typecheck/TcInteract.hs#L1973
@@ -735,24 +675,18 @@ makeKnCoercion knCls x z xEv
 --
 --     Integer -> SNat n     -- representation of literal to singleton
 --     SNat n  -> KnownNat n -- singleton to dictionary
-makeLitDict :: Class -> Type -> Integer -> TcPluginM (Maybe EvTerm)
-makeLitDict clas ty i
-  | Just (_, co_dict) <- tcInstNewTyCon_maybe (classTyCon clas) [ty]
-    -- co_dict :: KnownNat n ~ SNat n
-  , [ meth ]   <- classMethods clas
-  , Just tcRep <- tyConAppTyCon_maybe -- SNat
-                    $ funResultTy     -- SNat n
-                    $ dropForAlls     -- KnownNat n => SNat n
-                    $ idType meth     -- forall n. KnownNat n => SNat n
-  , Just (_, co_rep) <- tcInstNewTyCon_maybe tcRep [ty]
-        -- SNat n ~ Integer
+makeLitDict :: Class
+            -> Type
+            -> [Coercion]
+                 -- ^ dependent coercions
+            -> Integer
+            -> TcPluginM Solve (Maybe EvTerm)
+makeLitDict clas ty deps i
   = do
-    platform <- unsafeTcPluginTcM getPlatform
-    let et = mkNaturalExpr platform i
-        ev_tm = mkEvCast et (mkTcSymCo (mkTcTransCo co_dict co_rep))
-    return (Just ev_tm)
-  | otherwise
-  = return Nothing
+    et <- mkNaturalExpr i
+    let
+      ev_tm = wrapUnaryClassByFiat clas [ty] deps et
+    return (Just $ EvExpr ev_tm)
 
 {- |
 Given:
@@ -784,39 +718,54 @@ makeOpDictByFiat
   -- ^ Argument types for the Instance
   -> Type
   -- ^ Type of the result
+  -> [Coercion]
+  -- ^ Dependent coercions
   -> [EvExpr]
   -- ^ Evidence arguments
   -> Maybe EvTerm
-makeOpDictByFiat (opCls,dfid) knCls tyArgsC tyArgsI z evArgs
-    -- KnownBool b ~ SBool b
-  | Just (_, kn_co_dict) <- tcInstNewTyCon_maybe (classTyCon knCls) [z]
-  , [ kn_meth ] <- classMethods knCls
-  , Just kn_tcRep <- tyConAppTyCon_maybe -- SBool
-                       $ funResultTy     -- SBool b
-                       $ dropForAlls     -- KnownBool b => SBool b
-                       $ idType kn_meth  -- forall b. KnownBool b => SBool b
-    -- SBool b R~ Bool (The "Lie")
-#if MIN_VERSION_ghc(9,11,0)
-  , let kn_co_rep = mkUnivCo (PluginProv "ghc-typelits-knownnat") []
-#else
-  , let kn_co_rep = mkUnivCo (PluginProv "ghc-typelits-knownnat")
-#endif
-                             Representational
-                             (mkTyConApp kn_tcRep [z]) boolTy
-    -- KnownBoolNat2 f a b ~ SBool f
-  , Just (_, op_co_dict) <- tcInstNewTyCon_maybe (classTyCon opCls) tyArgsC
-  , [ op_meth ] <- classMethods opCls
-  , Just (op_tcRep,op_args) <- splitTyConApp_maybe        -- (SBool, [f])
-                                 $ funResultTy            -- SBool f
-                                 $ (`piResultTys` tyArgsC) -- KnownBoolNat2 f x y => SBool f
-                                 $ idType op_meth         -- forall f x y . KnownBoolNat2 f a b => SBoolf f
-    -- SBoolF f ~ Bool
-  , Just (_, op_co_rep) <- tcInstNewTyCon_maybe op_tcRep op_args
-  , EvExpr dfun_inst <- evDFunApp dfid tyArgsI evArgs
-    -- KnownBoolNat2 f x y ~ KnownBool b
-  , let op_to_kn  = mkTcTransCo (mkTcTransCo op_co_dict op_co_rep)
-                                (mkTcSymCo (mkTcTransCo kn_co_dict kn_co_rep))
-        ev_tm     = mkEvCast dfun_inst op_to_kn
-  = Just ev_tm
+makeOpDictByFiat (opCls,dfid) knCls tyArgsC tyArgsI z deps evArgs
+  = Just $ EvExpr $ wrapUnaryClassByFiat knCls [z] deps
+                  $ unwrapUnaryClassOverNewtype opCls tyArgsC ev0
+  where
+    ev0 = evDFunApp dfid tyArgsI evArgs
+
+-- | Given a class of the form @class C a b c where { meth :: ... }@ with
+-- a single method, construct a dictionary of the class using an 'UnivCo'.
+wrapUnaryClassByFiat :: HasDebugCallStack => Class -> [Type] -> [Coercion] -> EvExpr -> EvExpr
+wrapUnaryClassByFiat cls tys deps et
+  | Just dc <- tyConSingleDataCon_maybe (classTyCon cls)
+  , [meth] <- classMethods cls
+  , let meth_ty = subst $ classMethodTy meth
+  = let
+      by_fiat =
+        mkPluginUnivCo "ghc-typelits-knownnat" Representational
+          deps
+          (exprType et)
+          meth_ty
+    in
+      Var (dataConWrapId dc) `mkTyApps` tys `mkApps` [mkCast et by_fiat]
   | otherwise
-  = Nothing
+  = pprPanic "wrapUnaryClassByFiat: class not of expected form" $
+      vcat [ text "cls:" <+> ppr cls
+           , text "tys:" <+> ppr tys
+           ]
+
+  where
+    subst = substTyWithUnchecked (classTyVars cls) tys
+
+-- | Given a class of the form @class C a b c where { meth :: N x y }@
+-- in which @N@ is a newtype, and a dictionary for this class, unwraps **both**
+-- the class and the newtype to obtain the value inside the newtype.
+unwrapUnaryClassOverNewtype :: HasDebugCallStack => Class -> [Type] -> EvExpr -> EvExpr
+unwrapUnaryClassOverNewtype cls tys et
+  | [sel] <- classMethods cls
+  , Just (rep_tc, rep_args) <- splitTyConApp_maybe (subst $ classMethodTy sel)
+  , Just (_, co) <- instNewTyCon_maybe rep_tc rep_args
+  = mkCast (evSelector sel tys [et]) co
+  | otherwise
+  = pprPanic "unwrapUnaryClassOverNewtype: class not of expected form" $
+      vcat [ text "cls:" <+> ppr cls
+           , text "tys:" <+> ppr tys
+           ]
+  where
+    subst = substTyWithUnchecked (classTyVars cls) tys
