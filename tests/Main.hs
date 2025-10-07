@@ -35,8 +35,10 @@ import GHC.TypeLits.KnownNat
 import TestFunctions
 
 #if __GLASGOW_HASKELL__ >= 802
+#if !MIN_VERSION_QuickCheck(2,17,0)
 instance Arbitrary Natural where
   arbitrary = fromInteger . abs <$> arbitrary
+#endif
 #endif
 
 #if __GLASGOW_HASKELL__ >= 802

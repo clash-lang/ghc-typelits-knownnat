@@ -1,6 +1,6 @@
 # Changelog for the [`ghc-typelits-knownnat`](http://hackage.haskell.org/package/ghc-typelits-knownnat) package
 
-## 0.8.1
+## 0.8.1 *October 10th 2025*
 * Fix [#53](https://github.com/clash-lang/ghc-typelits-knownnat/issues/53) The plugin sometimes doesn't look through type aliases
 * Fix [#13](https://github.com/clash-lang/ghc-typelits-knownnat/issues/13) Type equality constraints aren't used by solver
 * Fix [#42](https://github.com/clash-lang/ghc-typelits-knownnat/issues/42) Intermediate type variable stops derivation of `KnownNat` constraint
