@@ -90,7 +90,7 @@ library
   build-depends:       base                      >= 4.9      && <5,
                        ghc                       >= 8.0.1    && <9.17,
                        ghc-tcplugin-api          >= 0.18.1.0 && <0.19,
-                       ghc-typelits-natnormalise >= 0.8.0    && <0.9,
+                       ghc-typelits-natnormalise >= 0.9.0    && <0.10,
                        transformers              >= 0.5.2.0  && <0.7,
                        template-haskell          >= 2.11.0.0 && <2.26
   hs-source-dirs:      src
@@ -143,7 +143,7 @@ test-suite unittests
   Other-Modules:       TestFunctions
   build-depends:       base                      >= 4.8   && <5,
                        ghc-typelits-knownnat,
-                       ghc-typelits-natnormalise >= 0.8.0 && <0.9,
+                       ghc-typelits-natnormalise >= 0.8.0 && <0.10,
                        tasty                     >= 0.10,
                        tasty-hunit               >= 0.9,
                        tasty-quickcheck          >= 0.8,

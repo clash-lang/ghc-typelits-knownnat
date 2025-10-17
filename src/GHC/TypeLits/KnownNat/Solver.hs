@@ -524,7 +524,7 @@ constraintToEvTerm defs givensTyConSubst givens (ct,cls,op,orig) = do
           -- with the original Nat operation
           subWant  = mkTyConApp typeNatSubTyCon . (:[want])
           -- exploded :: [()]
-          exploded = map (fst . runWriter . normaliseNat givensTyConSubst . subWant . fst &&& id)
+          exploded = map (fst . runWriter . normaliseNat . subWant . fst &&& id)
                          knownsX
           -- interesting cases for us are those where
           -- wanted and given only differ by a constant
