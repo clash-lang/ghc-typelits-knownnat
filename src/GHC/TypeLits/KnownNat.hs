@@ -134,10 +134,6 @@ import Data.Type.Bool
   ( If )
 import GHC.Exts
   ( Proxy# )
-#if __GLASGOW_HASKELL__ >= 904
-import GHC.Exts
-  ( Constraint )
-#endif
 import GHC.TypeLits
   ( Symbol )
 import GHC.TypeNats
@@ -210,11 +206,7 @@ instance (KnownNat a, KnownNat b) => KnownNat2 $(nameToSymbol ''(^)) a b where
   {-# NOINLINE natSing2 #-}
 
 -- | 'KnownNat2' instance for "GHC.TypeLits"' 'GHC.TypeLits.-'
-#if __GLASGOW_HASKELL__ >= 904
-instance (KnownNat a, KnownNat b, (b <= a) ~ (() :: Constraint)) => KnownNat2 $(nameToSymbol ''(-)) a b where
-#else
 instance (KnownNat a, KnownNat b, b <= a) => KnownNat2 $(nameToSymbol ''(-)) a b where
-#endif
   natSing2 = SNatKn (natVal (Proxy @a) - natVal (Proxy @b))
   {-# NOINLINE natSing2 #-}
 
