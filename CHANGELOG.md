@@ -1,5 +1,11 @@
 # Changelog for the [`ghc-typelits-knownnat`](http://hackage.haskell.org/package/ghc-typelits-knownnat) package
 
+## Unreleased
+* Unfix -fdefer-type-errors regression as it caused more regressions
+
+## 0.8.2 *October 17th 2025*
+* Fix -fdefer-type-errors regression
+
 ## 0.8.1 *October 10th 2025*
 * Fix [#53](https://github.com/clash-lang/ghc-typelits-knownnat/issues/53) The plugin sometimes doesn't look through type aliases
 * Fix [#13](https://github.com/clash-lang/ghc-typelits-knownnat/issues/13) Type equality constraints aren't used by solver
