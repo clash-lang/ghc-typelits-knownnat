@@ -286,10 +286,11 @@ plugin
 
 normalisePlugin :: TcPlugin
 normalisePlugin =
-  TcPlugin { tcPluginInit  = lookupKnownNatDefs
-           , tcPluginSolve = solveKnownNat
-           , tcPluginRewrite = const emptyUFM
-           , tcPluginStop  = const (return ())
+  TcPlugin { tcPluginInit     = lookupKnownNatDefs
+           , tcPluginSolve    = solveKnownNat
+           , tcPluginRewrite  = const emptyUFM
+           , tcPluginPostTc   = const (return ())
+           , tcPluginShutdown = const (return ())
            }
 
 solveKnownNat :: KnownNatDefs -> [Ct] -> [Ct]

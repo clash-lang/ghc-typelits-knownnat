@@ -1,5 +1,8 @@
 # Changelog for the [`ghc-typelits-knownnat`](http://hackage.haskell.org/package/ghc-typelits-knownnat) package
 
+## Unreleased
+* Bump ghc-tcplugin-api to prepare for inclusion into stackage
+
 ## 0.8.3 *March 20th 2026*
 * Unfix -fdefer-type-errors regression as it caused more regressions
 
