@@ -2,7 +2,6 @@
 
 [![Build Status](https://github.com/clash-lang/ghc-typelits-knownnat/actions/workflows/haskell-ci.yml/badge.svg?branch=master)](https://github.com/clash-lang/ghc-typelits-knownnat/actions)
 [![Hackage](https://img.shields.io/hackage/v/ghc-typelits-knownnat.svg)](https://hackage.haskell.org/package/ghc-typelits-knownnat)
-[![Hackage Dependencies](https://img.shields.io/hackage-deps/v/ghc-typelits-knownnat.svg?style=flat)](http://packdeps.haskellers.com/feed?needle=exact%3Aghc-typelits-knownnat)
 
 A type checker plugin for GHC that can derive "complex" `KnownNat`
 constraints from other simple/variable `KnownNat` constraints. i.e. without this
