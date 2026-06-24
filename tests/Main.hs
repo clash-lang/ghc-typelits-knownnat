@@ -209,6 +209,11 @@ test30 SNat = SNat @(Log b)
 test31 :: (KnownNat n, KnownNat m, k ~ (n + m)) => proxy n -> proxy m -> proxy k -> Natural
 test31 _ _ = natVal
 
+type family Stuck (a :: Type) :: Nat
+
+test32 :: forall a . (KnownNat (1 + Stuck a)) => Proxy a -> Number
+test32 _ = natVal (Proxy @(Stuck a))
+
 tests :: TestTree
 tests = testGroup "ghc-typelits-natnormalise"
   [ testGroup "Basic functionality"
