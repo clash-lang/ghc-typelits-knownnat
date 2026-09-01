@@ -88,8 +88,8 @@ library
                        UndecidableInstances
                        ViewPatterns
   build-depends:       base                      >= 4.9      && <5,
-                       ghc                       >= 8.0.1    && <9.17,
-                       ghc-tcplugin-api          >= 0.19     && <0.20,
+                       ghc                       >= 8.0.1    && <10.3,
+                       ghc-tcplugin-api          >= 0.20     && <0.21,
                        ghc-typelits-natnormalise >= 0.9.0    && <0.10,
                        transformers              >= 0.5.2.0  && <0.7,
                        template-haskell          >= 2.11.0.0 && <2.26
@@ -105,8 +105,7 @@ library
     build-depends:     integer-gmp >=1.0 && <1.1
     mixins:
       ghc
-        ( TcTypeNats   as GHC.Builtin.Types.Literals
-        , CoreSyn      as GHC.Core
+        ( CoreSyn      as GHC.Core
         , Class        as GHC.Core.Class
         , Coercion     as GHC.Core.Coercion
         , DataCon      as GHC.Core.DataCon

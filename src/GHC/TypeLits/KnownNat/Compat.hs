@@ -17,6 +17,8 @@ module GHC.TypeLits.KnownNat.Compat
 -- base
 import Data.Type.Bool
   ( If )
+import GHC.TypeNats
+  ( KnownNat )
 #if MIN_VERSION_ghc(9,1,0)
 import Data.Type.Ord
   ( OrdCond )
@@ -74,6 +76,8 @@ data KnownNatDefs
   , knownBoolNat2 :: Class
   , knownNat2Bool :: Class
   , knownNatN     :: Int -> Maybe Class -- ^ KnownNat{N}
+    -- | @KnownNat :: Nat -> Constraint@
+  , knownNatClass :: Class
 #if MIN_VERSION_ghc(9,1,0)
   , ordCondTyCon  :: TyCon
 #else
@@ -92,6 +96,7 @@ lookupKnownNatDefs = do
     kn1C   <- look ''KnownNat1
     kn2C   <- look ''KnownNat2
     kn3C   <- look ''KnownNat3
+    knC    <- look ''KnownNat
 #if MIN_VERSION_ghc(9,1,0)
     ordcond <- lookupTHName ''OrdCond >>= tcLookupTyCon
 #else
@@ -107,6 +112,7 @@ lookupKnownNatDefs = do
                                    ; 3 -> Just kn3C
                                    ; _ -> Nothing
                                    }
+           , knownNatClass = knC
 #if MIN_VERSION_ghc(9,1,0)
            , ordCondTyCon  = ordcond
 #else
