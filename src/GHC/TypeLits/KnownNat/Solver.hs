@@ -124,6 +124,13 @@ import GHC.TypeLits.Normalise.Unify
   ( CType (..),normaliseNat, reifySOP )
 
 -- ghc-tcplugin-api
+import GHC.Builtins
+  ( typeNatAddTyCon, typeNatDivTyCon, typeNatSubTyCon
+#if MIN_VERSION_ghc(9,1,0)
+  , promotedFalseDataCon, promotedTrueDataCon
+  , typeNatCmpTyCon
+#endif
+  )
 import GHC.TcPlugin.API
 import GHC.TcPlugin.API.TyConSubst
 
@@ -135,16 +142,6 @@ import GHC.TypeLits.KnownNat.Compat
   )
 
 -- ghc
-import GHC.Builtin.Names
-  ( knownNatClassName )
-#if MIN_VERSION_ghc(9,1,0)
-import GHC.Builtin.Types
-  ( promotedFalseDataCon, promotedTrueDataCon )
-import GHC.Builtin.Types.Literals
-  ( typeNatCmpTyCon )
-#endif
-import GHC.Builtin.Types.Literals
-  ( typeNatAddTyCon, typeNatDivTyCon, typeNatSubTyCon )
 import GHC.Core
   ( mkApps, mkTyApps )
 import GHC.Core.Class
@@ -315,8 +312,8 @@ solveKnownNat defs  givens  wanteds = do
 toKnConstraint :: KnownNatDefs -> Ct -> Maybe KnConstraint
 toKnConstraint defs ct = case classifyPredType $ ctEvPred $ ctEvidence ct of
   ClassPred cls [ty]
-    |  className cls == knownNatClassName ||
-       className cls == className (knownBool defs)
+    |  cls == knownNatClass defs ||
+       cls == knownBool defs
     -> Just (ct,cls,ty,Orig ty)
   _ -> Nothing
 
@@ -498,7 +495,7 @@ constraintToEvTerm defs givensTyConSubst givens (ct,cls,op,orig) = do
       let -- Get the knownnat contraints
           unKn ty' = case classifyPredType ty' of
                        ClassPred cls' [ty'']
-                         | className cls' == knownNatClassName
+                         | cls' == knownNatClass defs
                          -> Just ty''
                        _ -> Nothing
           -- Get the rewrites
