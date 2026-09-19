@@ -17,6 +17,8 @@ module GHC.TypeLits.KnownNat.Compat
 -- base
 import Data.Type.Bool
   ( If )
+import GHC.TypeNats
+  ( KnownNat )
 #if MIN_VERSION_ghc(9,1,0)
 import Data.Type.Ord
   ( OrdCond )
@@ -28,7 +30,7 @@ import GHC.TypeNats
 
 -- ghc-tcplugin-api
 import GHC.TcPlugin.API
-#if MIN_VERSION_ghc(9,3,0)
+#if !MIN_VERSION_ghc(8,11,0) || MIN_VERSION_ghc(9,3,0)
 import GHC.TcPlugin.API.Internal ( unsafeLiftTcM )
 #endif
 
@@ -74,6 +76,8 @@ data KnownNatDefs
   , knownBoolNat2 :: Class
   , knownNat2Bool :: Class
   , knownNatN     :: Int -> Maybe Class -- ^ KnownNat{N}
+    -- | @KnownNat :: Nat -> Constraint@
+  , knownNatClass :: Class
 #if MIN_VERSION_ghc(9,1,0)
   , ordCondTyCon  :: TyCon
 #else
@@ -92,6 +96,7 @@ lookupKnownNatDefs = do
     kn1C   <- look ''KnownNat1
     kn2C   <- look ''KnownNat2
     kn3C   <- look ''KnownNat3
+    knC    <- look ''KnownNat
 #if MIN_VERSION_ghc(9,1,0)
     ordcond <- lookupTHName ''OrdCond >>= tcLookupTyCon
 #else
@@ -107,6 +112,7 @@ lookupKnownNatDefs = do
                                    ; 3 -> Just kn3C
                                    ; _ -> Nothing
                                    }
+           , knownNatClass = knC
 #if MIN_VERSION_ghc(9,1,0)
            , ordCondTyCon  = ordcond
 #else
@@ -128,7 +134,8 @@ mkNaturalExpr i = do
 #elif MIN_VERSION_ghc(8,11,0)
     return $ GHC.mkNaturalExpr i
 #else
-    GHC.mkNaturalExpr i
+    -- GHC 8.x needs MonadThings, which TcPluginM no longer implements.
+    unsafeLiftTcM $ GHC.mkNaturalExpr i
 #endif
 
 --------------------------------------------------------------------------------

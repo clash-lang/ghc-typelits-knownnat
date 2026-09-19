@@ -1,5 +1,8 @@
 # Changelog for the [`ghc-typelits-knownnat`](http://hackage.haskell.org/package/ghc-typelits-knownnat) package
 
+## Unreleased
+* Preliminary support for GHC 10.0 and GHC 10.2
+
 ## 0.8.4 *May 13th 2026*
 * Bump ghc-tcplugin-api to prepare for inclusion into stackage
 
