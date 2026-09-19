@@ -30,7 +30,7 @@ import GHC.TypeNats
 
 -- ghc-tcplugin-api
 import GHC.TcPlugin.API
-#if MIN_VERSION_ghc(9,3,0)
+#if !MIN_VERSION_ghc(8,11,0) || MIN_VERSION_ghc(9,3,0)
 import GHC.TcPlugin.API.Internal ( unsafeLiftTcM )
 #endif
 
@@ -134,7 +134,8 @@ mkNaturalExpr i = do
 #elif MIN_VERSION_ghc(8,11,0)
     return $ GHC.mkNaturalExpr i
 #else
-    GHC.mkNaturalExpr i
+    -- GHC 8.x needs MonadThings, which TcPluginM no longer implements.
+    unsafeLiftTcM $ GHC.mkNaturalExpr i
 #endif
 
 --------------------------------------------------------------------------------
